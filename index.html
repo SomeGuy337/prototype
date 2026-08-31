@@ -1,0 +1,1655 @@
+<title>Hoard — descent prototype</title>
+
+<style>
+  :root {
+    --cave:        #151318;
+    --cave-deep:   #0d0b10;
+    --stone:       #241f26;
+    --stone-lit:   #2f2833;
+    --goblin:      #6fbf5b;
+    --gold:        #e8c05a;
+    --gold-dim:    #8a7134;
+    --steel:       #c9ced8;
+    --alarm:       #d1553f;
+    --ink:         #e6dfd4;
+    --ink-dim:     #9a9089;
+    --display: Impact, Haettenschweiler, "Arial Narrow Bold", "Franklin Gothic Bold", sans-serif;
+    --body: "Trebuchet MS", "Segoe UI", Candara, sans-serif;
+    --data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(ellipse 900px 500px at 12% 20%, #221a24 0%, transparent 60%),
+      radial-gradient(ellipse 700px 400px at 88% 85%, #1c1a26 0%, transparent 60%),
+      var(--cave-deep);
+    color: var(--ink);
+    font-family: var(--body);
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+
+  .shell { max-width: 1000px; margin: 0 auto; padding: 28px 20px 64px;
+           display: flex; flex-direction: column; gap: 18px; }
+
+  .masthead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .wordmark {
+    font-family: var(--display); font-size: clamp(34px, 7vw, 58px);
+    letter-spacing: 0.02em; color: var(--gold); text-transform: uppercase;
+    margin: 0; line-height: 0.95;
+    text-shadow: 0 2px 0 #4a3a12, 0 0 34px rgba(232,192,90,0.28);
+  }
+  .kicker { font-size: 13px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-dim); }
+
+  .hud {
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 1px solid #3b3340; border-radius: 4px; padding: 12px 16px;
+  }
+  .readout { display: flex; flex-direction: column; gap: 1px; }
+  .readout-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim); }
+  .readout-value { font-family: var(--display); font-size: 30px; line-height: 1;
+                   font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+  .readout-value.gold { color: var(--gold); }
+  .readout-sub { font-family: var(--data); font-size: 11px; color: var(--ink-dim); }
+  .hazards { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; max-width: 400px; justify-content: flex-end; }
+  .hz-chip {
+    font-size: 11px; background: rgba(209,85,63,0.14);
+    border: 1px solid rgba(209,85,63,0.5); color: #e88f79;
+    border-radius: 2px; padding: 3px 8px;
+  }
+  .hz-empty { font-size: 11px; color: var(--ink-dim); font-style: italic; }
+
+  .stage { position: relative; }
+  canvas {
+    display: block; width: 100%; max-width: 960px; height: auto;
+    aspect-ratio: 960 / 560; border: 1px solid #3b3340; border-radius: 4px;
+    background: var(--cave); cursor: pointer; touch-action: manipulation;
+  }
+
+  /* descent overlay */
+  .descent {
+    position: absolute; inset: 0; display: none;
+    background: rgba(9,8,11,0.93); border-radius: 4px;
+    flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    padding: 24px; text-align: center;
+  }
+  .descent.on { display: flex; }
+  .descent h2 {
+    font-family: var(--display); font-size: clamp(24px, 4vw, 38px); color: var(--gold);
+    margin: 0; text-transform: uppercase; letter-spacing: 0.04em; font-weight: normal;
+  }
+  .descent p { margin: 0; color: var(--ink-dim); font-size: 13px; max-width: 52ch; }
+  .routes { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .route {
+    flex: 0 1 260px; background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 1px solid #453c4b; border-radius: 3px; padding: 14px 16px;
+    color: var(--ink); text-align: left; cursor: pointer; font-family: var(--body);
+    display: flex; flex-direction: column; gap: 6px;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  .route:hover { transform: translateY(-3px); border-color: var(--gold-dim); }
+  .route:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .route-name { font-family: var(--display); font-size: 19px; letter-spacing: 0.03em;
+                text-transform: uppercase; color: var(--gold); }
+  .route-hazard { font-size: 12.5px; color: #e88f79; }
+  .route-loot { font-size: 12.5px; color: var(--ink-dim); }
+
+  .rack { display: flex; gap: 10px; flex-wrap: wrap; }
+  .card {
+    flex: 1 1 140px; min-width: 124px;
+    display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+    background: linear-gradient(180deg, var(--stone-lit), var(--stone));
+    border: 1px solid #3b3340; border-left: 3px solid var(--unit, var(--goblin));
+    border-radius: 3px; padding: 9px 11px; color: var(--ink);
+    font-family: var(--body); font-size: 13px; text-align: left; cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease;
+  }
+  .card:hover:not(:disabled) { transform: translateY(-2px); }
+  .card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .card[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+  .card:disabled { opacity: 0.4; cursor: not-allowed; }
+  .card-name { font-family: var(--display); font-size: 16px; letter-spacing: 0.03em; text-transform: uppercase; }
+  .card-cost { font-family: var(--data); font-size: 12px; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .card-desc { font-size: 11.5px; color: var(--ink-dim); line-height: 1.35; }
+
+  .satchel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+             border: 1px dashed #443b49; border-radius: 3px; padding: 9px 12px; }
+  .satchel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-dim); }
+  .slot { font-size: 19px; line-height: 1; background: var(--stone);
+          border: 1px solid #3b3340; border-radius: 3px; padding: 5px 8px;
+          cursor: pointer; color: var(--ink); transition: transform .12s ease; }
+  .slot:hover { transform: translateY(-2px); }
+  .slot:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .slot[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+  .satchel-hint { font-size: 12px; color: var(--ink-dim); font-style: italic; }
+
+  .inspector { border: 1px solid #3b3340; border-radius: 3px; padding: 11px 13px;
+               background: linear-gradient(180deg, var(--stone-lit), var(--stone)); }
+  .insp-empty { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+  .insp-body { display: flex; flex-direction: column; gap: 9px; }
+  /* an explicit display: would otherwise beat the UA rule for [hidden] */
+  .insp-body[hidden], .insp-empty[hidden] { display: none; }
+  .insp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .insp-name { font-family: var(--display); font-size: 21px; letter-spacing: 0.03em;
+               text-transform: uppercase; color: var(--gold); }
+  .insp-meta { font-family: var(--data); font-size: 12px; color: var(--ink-dim);
+               font-variant-numeric: tabular-nums; }
+  .insp-items { list-style: none; margin: 0; padding: 0; display: flex;
+                flex-direction: column; gap: 5px; }
+  .insp-items li { display: flex; gap: 9px; align-items: baseline; font-size: 13px; }
+  .insp-em { font-size: 16px; }
+  .insp-what { color: var(--ink); min-width: 118px; }
+  .insp-does { color: var(--goblin); }
+  .insp-does.nil { color: #7d7285; font-style: italic; }
+  .insp-free { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+  .btn.danger { border-color: #6b3a35; color: #e0897a; margin-left: auto; }
+  .btn.danger:hover { border-color: var(--alarm); color: #ffb3a3; }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .btn { font-family: var(--body); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+         background: transparent; color: var(--ink-dim); border: 1px solid #443b49;
+         border-radius: 3px; padding: 6px 14px; cursor: pointer; }
+  .btn:hover { color: var(--ink); border-color: var(--gold-dim); }
+  .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .notes { border-top: 1px solid #2b2530; padding-top: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .notes h2 { font-family: var(--display); font-size: 15px; text-transform: uppercase;
+              letter-spacing: 0.14em; color: var(--gold); margin: 0; font-weight: normal; }
+  .notes p { margin: 0; max-width: 66ch; font-size: 14px; color: #cfc7bd; }
+  .notes ul { margin: 0; padding-left: 18px; max-width: 66ch; display: flex; flex-direction: column; gap: 7px; }
+  .notes li { font-size: 14px; color: #cfc7bd; }
+  .notes strong { color: var(--ink); }
+  .q { color: var(--gold); font-style: italic; }
+
+  .bestiary { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .bx { background: var(--stone); border: 1px solid #3b3340; border-left: 3px solid var(--alarm);
+        border-radius: 3px; padding: 9px 12px; }
+  .bx-name { font-family: var(--display); font-size: 15px; letter-spacing: 0.03em;
+             text-transform: uppercase; color: #e0e5ee; }
+  .bx-line { font-size: 12px; color: var(--ink-dim); }
+  .bx-fix { font-size: 12px; color: var(--goblin); }
+
+  .btn.primary { border-color: var(--gold-dim); color: var(--gold); }
+  .btn.primary:hover { border-color: var(--gold); color: #f6e2a8; }
+
+  .game { display: flex; flex-direction: column; gap: 18px; }
+  /* A pass-through wrapper everywhere except short landscape, where it becomes the
+     floating bottom tray. */
+  .tray { display: contents; }
+  canvas, .btn, .card, .slot, .route { -webkit-tap-highlight-color: transparent; }
+  .hud, .rack, .satchel, .controls, .inspector { user-select: none; }
+
+  /* ---- turn-your-phone nudge ---------------------------------------------
+     Only ever shown on a small screen held upright. Landscape or desktop and
+     it does not exist. */
+  .rotate-nudge { display: none; }
+  @media (max-width: 900px) and (orientation: portrait) {
+    .rotate-nudge {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      border: 1px dashed var(--gold-dim); border-radius: 3px;
+      padding: 12px 14px; color: var(--gold);
+      font-size: 13px; letter-spacing: 0.04em; text-align: center;
+    }
+    .rotate-nudge::before {
+      content: "⟳"; font-size: 20px;
+      animation: tip 2.4s ease-in-out infinite;
+    }
+    @keyframes tip { 0%, 70%, 100% { transform: rotate(0deg); } 85% { transform: rotate(90deg); } }
+  }
+
+  /* ---- fullscreen play ---------------------------------------------------
+     Driven by a class, not the :fullscreen pseudo, so the same layout can be
+     used as a fixed-position fallback on platforms that refuse to fullscreen a
+     div (iOS Safari). The board takes whatever height is left after the panels,
+     and the panels shed everything you don't need with a thumb on the glass. */
+  .game.fs {
+    background: var(--cave-deep);
+    padding: 8px 10px; gap: 7px;
+    /* not height:100% — that resolves against an auto-height ancestor and collapses */
+    height: 100vh; height: 100dvh; box-sizing: border-box;
+  }
+  .game.fs.faux { position: fixed; inset: 0; z-index: 60; height: 100vh; height: 100dvh; }
+  body.faux-on { overflow: hidden; }
+
+  .game.fs .stage { flex: 1 1 auto; min-height: 0; display: flex;
+                    justify-content: center; align-items: center; }
+  .game.fs canvas { width: auto; height: 100%; max-width: 100%; max-height: 100%;
+                    margin: 0 auto; box-sizing: border-box; }
+  .game.fs .hud { padding: 5px 10px; gap: 14px; }
+  .game.fs .readout-value { font-size: 19px; }
+  .game.fs .readout-sub, .game.fs .readout-label { font-size: 9px; }
+  .game.fs .card-desc,
+  .game.fs .satchel-hint,
+  .game.fs .insp-empty,
+  .game.fs .insp-items,
+  .game.fs .rotate-nudge { display: none; }
+  .game.fs .card { padding: 5px 9px; min-width: 92px; flex: 1 1 92px; }
+  .game.fs .card-name { font-size: 13px; }
+  .game.fs .rack, .game.fs .satchel { gap: 6px; }
+  .game.fs .satchel, .game.fs .inspector { padding: 5px 9px; }
+  .game.fs .insp-name { font-size: 15px; }
+  .game.fs .controls { gap: 6px; }
+  .game.fs .btn { padding: 4px 10px; font-size: 11px; }
+
+  .hud-tools { display: none; gap: 6px; }
+  .btn.tiny { padding: 3px 9px; font-size: 11px; letter-spacing: 0.06em; }
+
+  /* A short landscape phone cannot stack six panels and still show a board: at
+     293px tall they leave about 75px for it. So keep only the two you need every
+     second — coins and the units — and put the rest behind a toggle. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    /* Overlaying the panels on the board hid the top and bottom lanes — a third of
+       the playable area. Keep them in flow and shrink them instead: a ~24px HUD and
+       a ~34px unit row leave the board the rest, with nothing covered. */
+    .game.fs { padding: 4px 6px; gap: 4px; }
+    .game.fs .hud { padding: 2px 8px; gap: 12px; }
+    .game.fs .readout { flex-direction: row; align-items: baseline; gap: 5px; }
+    .game.fs .readout-value { font-size: 15px; }
+    .game.fs .readout-label { font-size: 9px; }
+    .game.fs .readout-sub, .game.fs .hazards { display: none; }
+    .game.fs .hud-tools { display: flex; margin-left: auto; }
+
+    /* everything but coins and the units goes behind the Build toggle */
+    .game.fs .satchel, .game.fs .inspector, .game.fs .controls { display: none; }
+    .game.fs.extras .satchel, .game.fs.extras .controls { display: flex; }
+    .game.fs.extras .satchel.empty { display: none; }
+    .game.fs.extras .inspector { display: block; }
+    .game.fs.extras .inspector.vacant { display: none; }
+
+    .game.fs .rack, .game.fs #slots {
+      flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    }
+    .game.fs .rack::-webkit-scrollbar,
+    .game.fs #slots::-webkit-scrollbar { display: none; }
+    /* the board is the only thing allowed to give up height; a squashed panel
+       silently clips its own text */
+    .game.fs > *, .game.fs .tray > * { flex-shrink: 0; }
+    .game.fs .stage { flex-shrink: 1; }
+
+    /* name and cost on one line, so the price survives the smaller row */
+    .game.fs .card { flex: 0 0 auto; min-width: 0; padding: 3px 8px;
+                     flex-direction: row; align-items: baseline; gap: 6px; }
+    .game.fs .card-name { font-size: 11px; }
+    .game.fs .card-cost { font-size: 10.5px; }
+    .game.fs .satchel, .game.fs .inspector { padding: 3px 8px; }
+    .game.fs .satchel-label { display: none; }
+    .game.fs .insp-name { font-size: 13px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <h1 class="wordmark">Hoard</h1>
+    <span class="kicker">descent prototype &middot; v0.9</span>
+  </header>
+
+  <div class="game" id="game">
+  <div class="rotate-nudge" aria-hidden="true"><span>Turn your phone sideways</span></div>
+
+  <div class="hud">
+    <div class="readout">
+      <span class="readout-label">Coins</span>
+      <span class="readout-value gold" id="hud-coins">0</span>
+      <span class="readout-sub" id="hud-income">+0.0 / sec</span>
+    </div>
+    <div class="readout">
+      <span class="readout-label">Depth</span>
+      <span class="readout-value" id="hud-depth">1</span>
+      <span class="readout-sub" id="hud-chamber">the upper galleries</span>
+    </div>
+    <div class="readout">
+      <span class="readout-label">Wave</span>
+      <span class="readout-value" id="hud-wave">0</span>
+      <span class="readout-sub" id="hud-status">&nbsp;</span>
+    </div>
+    <div class="hazards" id="hud-hazards"><span class="hz-empty">no hazards yet</span></div>
+    <div class="hud-tools">
+      <button class="btn tiny" id="panels" type="button">Build ▸</button>
+      <button class="btn tiny" id="fs-exit" type="button" aria-label="Leave fullscreen">✕</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <canvas id="board" width="960" height="560" aria-label="Five lanes. Goblins defend the hoard on the left from pursuers entering on the right."></canvas>
+    <div class="descent" id="descent">
+      <h2 id="descent-title">Choose your route</h2>
+      <p id="descent-sub">The caravan moves deeper. Every road down costs you something.</p>
+      <div class="routes" id="routes"></div>
+    </div>
+  </div>
+
+  <div class="tray">
+  <div class="rack" id="rack"></div>
+
+  <div class="inspector" id="inspector">
+    <div class="insp-empty" id="insp-empty">Tap a goblin to inspect it, bolt junk onto it, merge it with another, or dig it up.</div>
+    <div class="insp-body" id="insp-body" hidden>
+      <div class="insp-head">
+        <span class="insp-name" id="insp-name">—</span>
+        <span class="insp-meta" id="insp-meta"></span>
+        <button class="btn danger" id="insp-remove" type="button">Dig up</button>
+      </div>
+      <ul class="insp-items" id="insp-items"></ul>
+    </div>
+  </div>
+
+  <div class="satchel">
+    <span class="satchel-label">Satchel</span>
+    <div id="slots" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    <span class="satchel-hint" id="satchel-hint">Junk drops when pursuers die &mdash; that is the only way to get it. Click it up, then click a goblin to bolt it on.</span>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="fullscreen" type="button">Play fullscreen</button>
+    <button class="btn" id="restart" type="button">New run</button>
+    <button class="btn" id="pause" type="button">Pause</button>
+    <span class="satchel-hint">Click a goblin, then another: same kind raises its rank, different kind gives it that job too. Esc cancels.</span>
+  </div>
+  </div>
+
+  </div>
+
+  <section class="notes">
+    <h2>What changed, and what it's testing</h2>
+    <p>
+      The hoard is no longer a health bar. Nothing drains it &mdash; if a pursuer reaches the caravan
+      your one bear trap in that lane fires, and if that trap is already spent, the run ends there.
+      A clean terminal fail rather than a slow bleed.
+    </p>
+    <ul>
+      <li>
+        <strong>Merging goes two ways.</strong> Two goblins of the <em>same</em> kind and rank become a
+        higher rank &mdash; but output grows sub-linearly (&times;1.7, not &times;2), so ranking up is a
+        deliberate loss of raw damage that buys board space and item slots: 2 at rank 1, 4 at rank 2,
+        6 at rank 3, capped at rank 4. Two goblins of <em>different</em> kinds instead make a hybrid
+        that holds both jobs at 70% each &mdash; a Chucker and a Barricade become a Bunker, a wall that
+        shoots. Ten pairings, each with its own name.
+        <span class="q">Is choosing between depth and breadth a real decision?</span>
+      </li>
+      <li>
+        <strong>Goblins are the answer to enemies. Junk is only ever a bonus.</strong> Nothing is for
+        sale &mdash; junk drops from the dead and that is the only way to get any. So no counter can be
+        gated behind a drop, because counters are not items: a Leaper clears a rank-1 goblin and nothing
+        taller, so merging <em>anything</em> in that lane stops it. Nobody is told this. The Leaper
+        simply bounces off, sits down hard and sees stars, and ranked goblins are visibly bigger.
+        Threats that bypass your line outright are held back for deeper chambers, the way PvZ waits
+        for the pool levels to introduce anything that swims past you.
+        <span class="q">Does the rule teach itself, or does it need saying out loud?</span>
+      </li>
+      <li>
+        <strong>Depth is a place, not a multiplier.</strong> Every fifth wave you pick a route down.
+        Each chamber changes the board itself &mdash; cells buried, lanes sealed, ground flooded &mdash;
+        and hazards stack for the rest of the run.
+        <span class="q">Does a visible board change beat a stat penalty you can't see?</span>
+      </li>
+      <li>
+        <strong>Coins buy goblins and nothing else.</strong> With no shop, every coin is a placement or
+        a merge, and the Ballista at 350 &mdash; seven Chuckers &mdash; is the only thing worth going
+        without for.
+        <span class="q">Does one genuinely expensive option create a real spend-or-wait decision?</span>
+      </li>
+    </ul>
+
+    <h2>The pursuers <span style="text-transform:none;letter-spacing:0;color:#7d7285;font-family:var(--body);font-size:12px;">&mdash; designer reference; the game never states any of the answers</span></h2>
+    <div class="bestiary" id="bestiary"></div>
+
+    <p style="font-size:13px; color:#9a9089; font-style:italic;">
+      Wave construction, spawn pacing, per-enemy speed variance and the bleed-out rule are still taken
+      from the original's decompiled source. Fiction, for anyone reading the numbers: the caravan stole
+      something that matters, and the goblins do not know which thing it is.
+    </p>
+  </section>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // Without this a phone lays the page out at 980px and scales the result down,
+  // which is why everything was unreadable on mobile. The page is embedded in a
+  // host-owned <head>, so claim the viewport at runtime instead of with a tag.
+  (function claimViewport() {
+    let m = document.querySelector('meta[name="viewport"]');
+    if (!m) {
+      m = document.createElement("meta");
+      m.name = "viewport";
+      document.head.appendChild(m);
+    }
+    m.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+  })();
+
+  const W = 960, H = 560;
+  const COLS = 9, ROWS = 5, CELL = 96;
+  const OX = 96, OY = 64;
+  const HOARD_X = OX;
+
+  const START_COINS = 175;
+  const SKY_RATE = 4.5;          // coins/sec at the top of the run…
+  const SKY_FLOOR = 0.45;        // …decaying to this share, as sky sun does over a level
+  const MAX_ITEMS = 6;
+  const MAX_TIER = 4;
+  const WAVES_PER_CHAMBER = 5;
+
+  // Merging used to be strictly better than not merging: two bodies became one with
+  // double the output and a free cell, so the play was always "spam the cheapest unit
+  // and merge forever". Power now grows sub-linearly, so merging *costs* you ~15% of
+  // your raw output. What you buy with that is board space and, above all, item slots —
+  // deep fusion is only reachable through rank.
+  const RANK_POWER = t => Math.pow(1.7, t - 1);   // 1 · 1.7 · 2.9 · 4.9
+  const RANK_SLOTS = t => Math.min(2 + (t - 1) * 2, MAX_ITEMS);   // 2 · 4 · 6 · 6
+
+  // Board.as constants
+  const WAVE_TIMER_MIN = 25, WAVE_TIMER_MAX = 31;
+  const BREAK_MIN = 0.50, BREAK_MAX = 0.65;
+  const WAVE_MIN_AGE = 4, TRIGGER_DELAY = 2;
+
+  const LEAP_TIME = 0.5;   // seconds in the air clearing one goblin
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[(Math.random() * a.length) | 0];
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const ROMAN = ["", "II", "III", "IV", "V", "VI", "VII"];
+
+  // ------------------------------------------------------------------ content
+  // Every item is always buyable from the stall. Drops are a discount, never a gate —
+  // a counter you can only get from RNG is a threat with no answer.
+  const ITEMS = {
+    helm:   { emoji: "⛑️", name: "Dented Helm",     blurb: "+160 hp" },
+    spring: { emoji: "🌀", name: "Rusty Spring",    blurb: "1.6× rate" },
+    bees:   { emoji: "🐝", name: "Jar of Bees",     blurb: "three-way shot" },
+    torch:  { emoji: "🔥", name: "Guttering Torch", blurb: "sets them alight" },
+    spikes: { emoji: "🔱", name: "Bundle of Spikes", blurb: "cuts whatever attacks it" },
+  };
+  const ITEM_KEYS = Object.keys(ITEMS);
+
+  const UNITS = {
+    chucker:   { name: "Chucker",   cost: 50,  hp: 110, tint: "#6fbf5b", desc: "Throws rocks down the lane." },
+    hoarder:   { name: "Hoarder",   cost: 50,  hp: 90,  tint: "#c9d45f", desc: "25 coins every ~24s. Slow to pay off." },
+    barricade: { name: "Barricade", cost: 50,  hp: 560, tint: "#3f8a4a", desc: "Doesn't fight. Refuses to move." },
+    bomber:    { name: "Bomber",    cost: 125, hp: 70,  tint: "#c96f4a", desc: "Detonates when something gets close." },
+    ballista:  { name: "Ballista",  cost: 350, hp: 130, tint: "#b07fc9", desc: "Slow. Pierces everything in the lane." },
+  };
+
+  // Merging two *different* kinds makes a goblin that does both jobs at 70% each —
+  // 1.4 units of work in one cell, plus a freed cell, in exchange for specialisation.
+  const HYBRID_EFF = 0.7;
+  const MAX_ROLES = 2;
+  const HYBRIDS = {
+    "barricade+chucker":  "Bunker",
+    "chucker+hoarder":    "Tollkeeper",
+    "bomber+chucker":     "Mortar",
+    "ballista+chucker":   "Battery",
+    "barricade+hoarder":  "Strongbox",
+    "bomber+hoarder":     "Piggy Bank",
+    "ballista+hoarder":   "Tithe Engine",
+    "barricade+bomber":   "Powder Keg",
+    "ballista+barricade": "Bastion",
+    "ballista+bomber":    "Siege Mortar",
+  };
+
+  const FUSIONS = {
+    "chucker|helm": "Tinhead", "chucker|spring": "Windup Chucker",
+    "chucker|bees": "Hivechucker", "chucker|torch": "Firechucker",
+    "chucker|spikes": "Caltrop Chucker",
+    "chucker|bees+helm": "Hivehead", "chucker|helm+spring": "Jack-in-the-Helm",
+    "chucker|helm+torch": "Furnace", "chucker|bees+spring": "Beegatling",
+    "chucker|spring+torch": "Comet Chucker", "chucker|bees+torch": "Wrath of the Doorknob", "chucker|spikes+torch": "Brand & Barb",
+    "barricade|helm": "Bulwark", "barricade|spring": "Springboard",
+    "barricade|bees": "Hive Wall", "barricade|torch": "Brazier",
+    "barricade|spikes": "Pike Hedge",
+    "barricade|helm+spikes": "Portcullis", "barricade|spikes+torch": "Burning Hedge",
+    "hoarder|helm": "Vault", "hoarder|spring": "Fastfingers",
+    "hoarder|bees": "Beekeeper", "hoarder|torch": "Coinsmelter", "hoarder|spikes": "Prickly Miser",
+    "bomber|helm": "Heavy Ordnance", "bomber|spring": "Hair Trigger",
+    "bomber|bees": "Shrapnel Hive", "bomber|torch": "Wildfire",
+    "ballista|torch": "Firelance", "ballista|spring": "Repeating Ballista",
+    "ballista|bees": "Swarmlance", "ballista|helm": "Siege Engine", "ballista|spikes": "Harpoon",
+  };
+
+  // A goblin is a *set of jobs*, not one job. One role is a plain unit; two roles is a
+  // hybrid that does both at reduced efficiency.
+  const roleKey = g => [...g.roles].sort().join("+");
+  const has = (g, r) => g.roles.includes(r);
+  const eff = g => (g.roles.length > 1 ? HYBRID_EFF : 1) * RANK_POWER(g.tier);
+  const kindName = g => g.roles.length > 1
+    ? (HYBRIDS[roleKey(g)] || g.roles.map(r => UNITS[r].name).join("-"))
+    : UNITS[g.roles[0]].name;
+
+  function baseName(g) {
+    if (!g.items.length) return kindName(g);
+    if (g.roles.length === 1) {
+      const key = g.roles[0] + "|" + [...g.items].sort().join("+");
+      if (FUSIONS[key]) return FUSIONS[key];
+    }
+    return ITEMS[g.items[0]].name.split(" ").pop() + " " + kindName(g);
+  }
+  const fullName = g => (baseName(g) + " " + ROMAN[g.tier - 1]).trim();
+
+  // Every pursuer that beats a static line has a fusion that answers it.
+  const FOES = {
+    squire:   { name: "Squire",    pts: 1, weight: 60, from: 1, hp: 105, speed: 20, dps: 22, drop: 0.16,
+                line: "Walks. Hits whatever is in front of it.", fix: "Anything at all." },
+    scout:    { name: "Scout",     pts: 2, weight: 34, from: 2, hp: 70,  speed: 44, dps: 16, drop: 0.32,
+                line: "Fast and flimsy. Arrives before you are ready.", fix: "Rate of fire — a Spring." },
+    knight:   { name: "Knight",    pts: 4, weight: 24, from: 3, hp: 340, speed: 15, dps: 28, drop: 0.36,
+                line: "Slow, armoured, chews through walls.", fix: "Raw damage. Merge your Chuckers." },
+    leaper:   { name: "Leaper",    pts: 3, weight: 28, from: 2, hp: 120, speed: 26, dps: 20, drop: 0.44,
+                line: "Vaults clean over the first goblin it meets.",
+                fix: "Anything of rank 2 or better. It cannot clear a merged goblin." },
+  };
+  const FOE_KEYS = Object.keys(FOES);
+
+  const CHAMBERS = [
+    { id: "gallery",  name: "Collapsed Gallery", hazard: "Seven cells buried under rubble",
+      apply: () => { for (let i = 0; i < 7; i++) S.rubble.add(((Math.random() * (COLS - 2) | 0) + 2) + "," + (Math.random() * ROWS | 0)); } },
+    { id: "narrows",  name: "The Narrows", hazard: "The outer lanes seal shut",
+      apply: () => { S.sealed.add(0); S.sealed.add(ROWS - 1); } },
+    { id: "cistern",  name: "Sunken Cistern", hazard: "The low ground floods — only Barricades hold there",
+      apply: () => { S.flooded.add(ROWS - 1); S.flooded.add(ROWS - 2); } },
+    { id: "orchard",  name: "Bone Orchard", hazard: "Every wave brings three extra Squires",
+      apply: () => { S.extraSquires += 3; } },
+    { id: "dark",     name: "The Lightless Deep", hazard: "Pursuers enter 30% faster",
+      apply: () => { S.speedMul *= 1.3; } },
+    { id: "lean",     name: "Picked-Over Seams", hazard: "Coins fall a third slower",
+      apply: () => { S.incomeMul *= 0.66; } },
+  ];
+  const CHAMBER_NAMES = ["the upper galleries", "the old mine road", "the drowned steps",
+                         "the bone orchard", "the lightless deep", "the last seam"];
+
+  // ------------------------------------------------------------------ state
+  let S;
+  function newRun() {
+    S = {
+      coins: START_COINS, wave: 0, depth: 1, phase: "breather", phaseT: 4,
+      goblins: [], foes: [], shots: [], junk: [], puffs: [], coinPops: [],
+      traps: [true, true, true, true, true],
+      satchel: [], queue: [], hazards: [],
+      rubble: new Set(), sealed: new Set(), flooded: new Set(),
+      extraSquires: 0, speedMul: 1, incomeMul: 1,
+      waveHp: 0, breakAt: 0.55, waveTimer: 28,
+      selUnit: null, selItem: null, selGob: null,
+      over: false, paused: false, seenDrop: false, t: 0, choosing: false,
+    };
+  }
+  newRun();
+
+  const cellOf = g => ({ x: OX + g.col * CELL, y: OY + g.row * CELL });
+  const laneY = r => OY + r * CELL;
+  const gobAt = (c, r) => S.goblins.find(g => g.col === c && g.row === r && g.hp > 0);
+  const blocked = (c, r) => S.rubble.has(c + "," + r) || S.sealed.has(r);
+  // A hybrid keeps 60% of both bodies, so Bunker (110 + 560) is tanky but short of a
+  // pure Barricade — you trade peak durability for a cell and a second job.
+  const baseHpOf = g => g.roles.reduce((s, r) => s + UNITS[r].hp, 0) * (g.roles.length > 1 ? 0.6 : 1);
+  const maxHpOf = g => (baseHpOf(g) + (g.items.includes("helm") ? 160 : 0)) * RANK_POWER(g.tier);
+  const costOf = g => g.roles.reduce((s, r) => s + UNITS[r].cost, 0);
+
+  function laneHas(row, item) {
+    return S.goblins.some(g => g.row === row && g.hp > 0 && g.items.includes(item));
+  }
+  // Half of everything sunk into it — a rank-3 body swallowed four units' worth.
+  const refundOf = g => Math.round(costOf(g) * 0.5 * Math.pow(2, g.tier - 1));
+
+  // ------------------------------------------------------------------ economy
+  function income() {
+    const decay = Math.max(SKY_FLOOR, 1 - S.wave * 0.045);
+    return SKY_RATE * decay * S.incomeMul;
+  }
+  function addCoins(n, x, y) {
+    S.coins += n;
+    if (x !== undefined) S.coinPops.push({ x, y, t: 0, n });
+  }
+
+  // ------------------------------------------------------------------ waves
+  const isBanner = n => n % WAVES_PER_CHAMBER === 0;
+
+  function buildWave(n) {
+    // v0.3's ramp was linear and got solved by wave 25 without thinking. This one is
+    // quadratic: gentle for the first few waves, genuinely steep once you are deep.
+    let budget = Math.round(3 + n * 2.4 + n * n * 0.22);
+    if (isBanner(n)) budget = Math.round(budget * 1.6);
+
+    const pool = FOE_KEYS.filter(k => n >= FOES[k].from);
+    const gap = Math.max(0.26, 1.4 - n * 0.06);
+    const q = [];
+    let t = 0;
+
+    const add = type => {
+      t += rnd(gap * 0.6, gap * 1.6);
+      let lane = (Math.random() * ROWS) | 0, guard = 0;
+      while (S.sealed.has(lane) && guard++ < 12) lane = (Math.random() * ROWS) | 0;
+      q.push({ type, lane, at: t });
+    };
+
+    while (budget > 0) {
+      const afford = pool.filter(k => FOES[k].pts <= budget);
+      if (!afford.length) break;
+      const total = afford.reduce((s, k) => s + FOES[k].weight, 0);
+      let r = Math.random() * total, chosen = afford[afford.length - 1];
+      for (const k of afford) { r -= FOES[k].weight; if (r <= 0) { chosen = k; break; } }
+      budget -= FOES[chosen].pts;
+      add(chosen);
+    }
+    for (let i = 0; i < S.extraSquires; i++) add("squire");
+    q.sort((a, b) => a.at - b.at);
+    return q;
+  }
+
+  function startWave() {
+    S.wave++;
+    S.queue = buildWave(S.wave);
+    S.phase = "fight";
+    S.phaseT = 0;
+    S.waveHp = 0;
+    S.breakAt = rnd(BREAK_MIN, BREAK_MAX);
+    S.waveTimer = rnd(WAVE_TIMER_MIN, WAVE_TIMER_MAX);
+  }
+
+  function waveHealthLeft() {
+    if (!S.waveHp) return 1;
+    let alive = 0;
+    for (const f of S.foes) if (f.wave === S.wave && f.hp > 0) alive += f.hp;
+    return alive / S.waveHp;
+  }
+
+  function spawnFoe(type, lane) {
+    const d = FOES[type];
+    S.foes.push({
+      type, lane, x: W + 20, hp: d.hp, maxHp: d.hp, wave: S.wave,
+      speed: d.speed * rnd(0.77, 1.23),
+      burn: 0, burnT: 0, hitT: 0, bleeding: false, bob: rnd(0, 6.28),
+      leapt: false, leapT: 0, bonk: 0, leapFrom: 0, leapTo: 0,
+    });
+    S.waveHp += d.hp;
+  }
+
+  // ------------------------------------------------------------------ descent
+  function offerDescent() {
+    S.choosing = true;
+    S.phase = "descend";
+    const opts = [];
+    const avail = CHAMBERS.filter(c => !S.hazards.some(h => h.id === c.id));
+    while (opts.length < 2 && avail.length) {
+      const c = avail.splice((Math.random() * avail.length) | 0, 1)[0];
+      opts.push(c);
+    }
+    if (!opts.length) { takeRoute(null); return; }
+
+    const wrap = document.getElementById("routes");
+    wrap.innerHTML = "";
+    for (const c of opts) {
+      const loot = [pick(ITEM_KEYS), pick(ITEM_KEYS)];
+      const b = document.createElement("button");
+      b.className = "route";
+      b.type = "button";
+      b.innerHTML =
+        '<span class="route-name">' + c.name + "</span>" +
+        '<span class="route-hazard">' + c.hazard + "</span>" +
+        '<span class="route-loot">Scavenged on the way: ' +
+          loot.map(k => ITEMS[k].emoji + " " + ITEMS[k].name).join(", ") + "</span>";
+      b.addEventListener("click", () => takeRoute(c, loot));
+      wrap.appendChild(b);
+    }
+    document.getElementById("descent-title").textContent = "Descend to depth " + (S.depth + 1);
+    document.getElementById("descent").classList.add("on");
+  }
+
+  function takeRoute(chamber, loot) {
+    document.getElementById("descent").classList.remove("on");
+    document.getElementById("routes").innerHTML = "";
+    S.choosing = false;
+    S.depth++;
+    if (chamber) {
+      chamber.apply();
+      S.hazards.push(chamber);
+      renderHazards();
+    }
+    if (loot) for (const k of loot) if (S.satchel.length < 10) S.satchel.push(k);
+    // rubble or sealing can strand goblins — refund them rather than delete silently
+    S.goblins = S.goblins.filter(g => {
+      if (!blocked(g.col, g.row)) return true;
+      addCoins(refundOf(g), cellOf(g).x + 48, cellOf(g).y + 40);
+      return false;
+    });
+    S.traps = S.traps.map((t, r) => S.sealed.has(r) ? false : t);
+    renderSlots();
+    S.phase = "breather";
+    S.phaseT = 5;
+  }
+
+  // ------------------------------------------------------------------ update
+  function update(dt) {
+    S.t += dt;
+    S.coins += income() * dt;
+
+    if (S.phase === "breather") {
+      S.phaseT -= dt;
+      if (S.phaseT <= 0) startWave();
+    } else if (S.phase === "fight") {
+      S.phaseT += dt;
+      while (S.queue.length && S.queue[0].at <= S.phaseT) {
+        const e = S.queue.shift();
+        spawnFoe(e.type, e.lane);
+      }
+      if (!S.queue.length) {
+        const spent = S.phaseT >= S.waveTimer;
+        const broken = S.phaseT > WAVE_MIN_AGE && waveHealthLeft() <= S.breakAt && !isBanner(S.wave + 1);
+        if (spent || broken || !S.foes.length) {
+          if (isBanner(S.wave)) { offerDescent(); return; }
+          S.phase = "breather";
+          S.phaseT = broken ? TRIGGER_DELAY : 5;
+        }
+      }
+    }
+
+    // --- goblins
+    for (const g of S.goblins) {
+      if (g.hp <= 0) continue;
+      const p = cellOf(g);
+      // Each job the goblin holds runs on its own clock, so a hybrid genuinely does
+      // both rather than alternating between them.
+      const rate = (g.items.includes("spring") ? 1.6 : 1);
+      const power = eff(g);
+      for (const r of g.roles) g.cds[r] -= dt * rate;
+
+      if (has(g, "chucker") && g.cds.chucker <= 0) {
+        const target = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x > p.x - 10);
+        if (target) {
+          g.cds.chucker = 1.4;
+          g.recoil = 0.18;
+          const shots = g.items.includes("bees") ? 3 : 1;
+          for (let i = 0; i < shots; i++) {
+            S.shots.push({
+              x: p.x + 58, y: p.y + 48 + (shots > 1 ? (i - 1) * 16 : 0),
+              vy: shots > 1 ? (i - 1) * 26 : 0, lane: g.row,
+              dmg: 21 * power, fire: g.items.includes("torch"), bee: g.items.includes("bees"),
+            });
+          }
+        } else g.cds.chucker = Math.min(g.cds.chucker, 0.05);
+      }
+
+      if (has(g, "ballista") && g.cds.ballista <= 0) {
+        const any = S.foes.some(f => f.lane === g.row && f.hp > 0 && f.x > p.x);
+        if (any) {
+          g.cds.ballista = 6;
+          g.recoil = 0.3;
+          S.shots.push({
+            x: p.x + 58, y: p.y + 48, vy: 0, lane: g.row,
+            dmg: 130 * power, fire: g.items.includes("torch"), pierce: true, big: true,
+          });
+        } else g.cds.ballista = Math.min(g.cds.ballista, 0.05);
+      }
+
+      if (has(g, "hoarder") && g.cds.hoarder <= 0) {
+        g.cds.hoarder = rnd(23.5, 25);
+        g.pop = 0.4;
+        addCoins(25 * power, p.x + 48, p.y + 40);
+      }
+
+      if (has(g, "bomber")) {
+        const near = S.foes.find(f => f.lane === g.row && f.hp > 0 && f.x < p.x + 150 && f.x > p.x - 60);
+        if (near) {
+          for (const f of S.foes) {
+            if (f.lane === g.row && Math.abs(f.x - p.x) < 170) hurt(f, 240 * power, g.items.includes("torch"));
+          }
+          S.puffs.push({ x: p.x + 48, y: p.y + 48, t: 0, r: 170, kind: "boom" });
+          g.hp = 0;
+        }
+      }
+
+      if (g.pop > 0) g.pop -= dt;
+      if (g.recoil > 0) g.recoil -= dt;
+      if (g.hurtT > 0) g.hurtT -= dt;
+    }
+    S.goblins = S.goblins.filter(g => g.hp > 0);
+    if (S.selGob && S.selGob.hp <= 0) S.selGob = null;
+
+    // --- projectiles
+    for (const s of S.shots) {
+      s.x += (s.big ? 620 : 300) * dt;
+      s.y += s.vy * dt;
+      for (const f of S.foes) {
+        if (f.lane !== s.lane || f.hp <= 0) continue;
+        if (Math.abs(f.x - s.x) >= (s.big ? 26 : 22)) continue;
+        if (s.hitSet && s.hitSet.has(f)) continue;
+        hurt(f, s.dmg, s.fire);
+        if (s.pierce) { (s.hitSet = s.hitSet || new Set()).add(f); }
+        else { s.dead = true; }
+        break;
+      }
+      if (s.x > W + 30) s.dead = true;
+    }
+    S.shots = S.shots.filter(s => !s.dead);
+
+    // --- pursuers
+    for (const f of S.foes) {
+      if (f.hp <= 0) continue;
+      const d = FOES[f.type];
+      f.bob += dt * 6;
+      if (f.hitT > 0) f.hitT -= dt;
+      if (f.bonk > 0) f.bonk -= dt;
+
+      if (f.burn > 0) {
+        f.burnT -= dt;
+        if (f.burnT <= 0) { f.burnT = 0.5; f.burn--; hurt(f, 9, false); }
+      }
+      if (!f.bleeding && f.hp / f.maxHp <= 0.33) {
+        f.bleeding = true;
+        S.puffs.push({ x: f.x, y: laneY(f.lane) + 26, t: 0, r: 26, kind: "steal" });
+      }
+      if (f.bleeding) f.hp -= (f.maxHp >= 300 ? 30 : 12) * dt;
+
+      if (f.leapT > 0) {            // mid-vault, sailing over the line
+        f.leapT -= dt;
+        const k = clamp(1 - f.leapT / LEAP_TIME, 0, 1);
+        f.x = f.leapFrom + (f.leapTo - f.leapFrom) * k;
+        continue;
+      }
+
+      const col = Math.floor((f.x - OX) / CELL);
+      const wall = col >= 0 && col < COLS ? gobAt(col, f.lane) : null;
+      if (wall) {
+        // A Leaper clears a rank-1 goblin and nothing taller. Merging anything in
+        // the lane is the answer — no item, nothing to buy, nothing to roll for.
+        if (f.type === "leaper" && !f.leapt) {
+          f.leapt = true;
+          if (wall.tier < 2) {
+            // land clear of the cell it jumped, or the vault covers less than a
+            // tile and it comes down on the goblin it was trying to clear
+            f.leapT = LEAP_TIME;
+            f.leapFrom = f.x;
+            f.leapTo = OX + col * CELL - 26;
+            continue;
+          }
+          // Ran headlong into something too big to clear. Make the failure loud:
+          // this is the only lesson the mechanic ever teaches.
+          f.x += 30;
+          f.bonk = 0.5;
+          hurt(f, 30, false);
+          S.puffs.push({ x: f.x - 14, y: laneY(f.lane) + 44, t: 0, r: 46, kind: "bonk" });
+        }
+        const gp = cellOf(wall);
+        wall.hp -= d.dps * dt;
+        wall.hurtT = 0.12;
+        if (wall.items.includes("torch")) hurt(f, 16 * dt, false);
+        if (wall.items.includes("spikes")) hurt(f, 10 * dt, false);
+        if (wall.items.includes("spring") && Math.random() < dt * 1.4) {
+          f.x += 34;
+          S.puffs.push({ x: f.x, y: laneY(f.lane) + 40, t: 0, r: 34, kind: "boing" });
+        }
+        if (wall.hp <= 0) S.puffs.push({ x: gp.x + 48, y: gp.y + 48, t: 0, r: 46, kind: "poof" });
+        continue;
+      }
+
+      f.x -= f.speed * S.speedMul * dt;
+      if (f.x <= HOARD_X) breach(f);
+    }
+
+    // --- deaths & drops
+    for (const f of S.foes) {
+      if (f.hp > 0 || f.done) continue;
+      f.done = true;
+      const guaranteed = !S.seenDrop && S.wave >= 2;
+      if (Math.random() < FOES[f.type].drop || guaranteed) {
+        S.seenDrop = true;
+        S.junk.push({ x: clamp(f.x, OX + 20, W - 30), y: laneY(f.lane) + 62,
+                      key: pick(ITEM_KEYS), life: 11, bob: rnd(0, 6.28) });
+      }
+      S.puffs.push({ x: f.x, y: laneY(f.lane) + 48, t: 0, r: 40, kind: "poof" });
+    }
+    S.foes = S.foes.filter(f => f.hp > 0);
+
+    for (const j of S.junk) { j.life -= dt; j.bob += dt * 3; }
+    S.junk = S.junk.filter(j => j.life > 0);
+    for (const p of S.puffs) p.t += dt;
+    S.puffs = S.puffs.filter(p => p.t < 0.5);
+    for (const c of S.coinPops) c.t += dt;
+    S.coinPops = S.coinPops.filter(c => c.t < 0.7);
+  }
+
+  // Reaching the caravan is terminal. The trap buys you exactly one mistake per lane.
+  function breach(f) {
+    if (S.traps[f.lane]) {
+      S.traps[f.lane] = false;
+      for (const v of S.foes) if (v.lane === f.lane && v.hp > 0) v.hp = 0;
+      S.puffs.push({ x: OX + 40, y: laneY(f.lane) + 48, t: 0, r: 200, kind: "boom" });
+      return;
+    }
+    S.over = true;
+  }
+
+  function hurt(f, dmg, fire) {
+    f.hp -= dmg;
+    f.hitT = 0.1;
+    if (fire) f.burn = Math.max(f.burn, 6);
+  }
+
+  // ------------------------------------------------------------------ drawing
+  const cv = document.getElementById("board");
+  const cx = cv.getContext("2d");
+
+  function drawGoblin(g) {
+    const p = cellOf(g);
+    const cxp = p.x + 48, cyp = p.y + 56;
+    const tint = blendTints(g.roles);
+    const squash = g.pop > 0 ? 1 + g.pop * 0.3 : 1;
+    const lean = g.recoil > 0 ? -g.recoil * 40 : 0;
+    const grow = 1 + (g.tier - 1) * 0.19;   // rank is the counter, so rank must read
+    const big = has(g, "barricade");
+    const rw = (big ? 34 : 26) * squash * grow, rh = (big ? 36 : 28) * squash * grow;
+
+    if (S.selGob === g) {
+      cx.strokeStyle = "#e8c05a"; cx.lineWidth = 2;
+      cx.setLineDash([5, 4]);
+      cx.strokeRect(p.x + 4, p.y + 4, CELL - 8, CELL - 8);
+      cx.setLineDash([]);
+    }
+
+    cx.save();
+    cx.translate(cxp + lean, cyp);
+    if (g.hurtT > 0) cx.globalAlpha = 0.75;
+
+    cx.fillStyle = tint;
+    cx.beginPath();
+    cx.moveTo(-rw + 3, -6); cx.lineTo(-rw - 15, -20); cx.lineTo(-rw - 2, 4); cx.closePath(); cx.fill();
+    cx.beginPath();
+    cx.moveTo(rw - 3, -6); cx.lineTo(rw + 15, -20); cx.lineTo(rw + 2, 4); cx.closePath(); cx.fill();
+
+    cx.beginPath(); cx.ellipse(0, 0, rw, rh, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = "rgba(0,0,0,0.22)";
+    cx.beginPath(); cx.ellipse(0, rh * 0.45, rw * 0.92, rh * 0.4, 0, 0, 6.284); cx.fill();
+
+    const ey = -rh * 0.22;
+    cx.fillStyle = "#fdfbf4";
+    cx.beginPath(); cx.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); cx.fill();
+    cx.fillStyle = "#14110f";
+    const look = has(g, "hoarder") ? -2 : 2;
+    cx.beginPath(); cx.arc(-9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+    cx.beginPath(); cx.arc(9 + look, ey + 1, 3.4, 0, 6.284); cx.fill();
+
+    cx.strokeStyle = "#14110f"; cx.lineWidth = 2; cx.lineCap = "round";
+    cx.beginPath(); cx.arc(0, rh * 0.12, 9, 0.25, Math.PI - 0.25); cx.stroke();
+    cx.fillStyle = "#fdfbf4";
+    cx.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
+    cx.fillRect(2, rh * 0.12 + 5, 3.5, 4);
+    cx.restore();
+
+    // junk, arranged in an arc over the head so six still read
+    const n = g.items.length;
+    g.items.forEach((k, i) => {
+      const spread = Math.min(n - 1, 5) * 15;
+      const ix = cxp - spread / 2 + i * (n > 1 ? spread / (n - 1) : 0);
+      cx.font = "16px serif"; cx.textAlign = "center";
+      cx.fillText(ITEMS[k].emoji, ix, p.y + 24 - (i % 2) * 11);
+    });
+
+    const mx = maxHpOf(g);
+    if (g.hp < mx) {
+      const w = 54, fr = clamp(g.hp / mx, 0, 1);
+      cx.fillStyle = "rgba(0,0,0,0.55)"; cx.fillRect(cxp - w / 2, p.y + 84, w, 5);
+      cx.fillStyle = fr > 0.4 ? "#6fbf5b" : "#d1553f"; cx.fillRect(cxp - w / 2, p.y + 84, w * fr, 5);
+    }
+    if (g.items.length || g.tier > 1 || g.roles.length > 1) {
+      cx.font = (g.tier > 1 ? "bold " : "") + "10px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = g.tier > 1 ? "#f0d68a" : "#e8c05a";
+      cx.textAlign = "center";
+      cx.fillText(fullName(g), cxp, p.y + 100);
+    }
+  }
+
+  function drawFoe(f) {
+    const y = laneY(f.lane) + 54;
+    const bob = Math.sin(f.bob) * 2;
+
+    const tint = f.type === "scout" ? "#6d6475" : f.type === "knight" ? "#aab2c0"
+               : f.type === "leaper" ? "#bda66f" : "#c9ced8";
+    const scale = f.type === "knight" ? 1.22 : f.type === "scout" ? 0.9 : 1;
+    const lift = f.leapT > 0 ? -Math.sin((LEAP_TIME - f.leapT) / LEAP_TIME * Math.PI) * 52 : 0;
+    const bonked = f.bonk > 0;
+
+    cx.save();
+    cx.translate(f.x, y + bob + lift);
+    cx.scale(scale, scale);
+    if (bonked) cx.rotate(0.5 * Math.sin(f.bonk * 26) * f.bonk);   // knocked flat on its back
+    if (f.hitT > 0) cx.globalAlpha = 0.6;
+
+    cx.fillStyle = tint;
+    cx.beginPath();
+    cx.moveTo(-13, 26); cx.lineTo(-9, -8); cx.lineTo(9, -8); cx.lineTo(13, 26); cx.closePath(); cx.fill();
+
+    if (f.bleeding) {
+      cx.fillStyle = "#9a8f84";
+      cx.beginPath(); cx.arc(0, -13, 9, 0, 6.284); cx.fill();
+      cx.fillStyle = "#d1553f"; cx.fillRect(-7, -8, 14, 3);
+    } else {
+      cx.beginPath(); cx.arc(0, -14, 12, Math.PI, 0); cx.fill();
+      cx.fillRect(-12, -14, 24, 9);
+      cx.fillStyle = "#0e0c11"; cx.fillRect(-9, -12, 18, 4);
+      if (f.type === "scout") { cx.fillStyle = "#d1553f"; cx.fillRect(-9, -12, 18, 4); }
+    }
+
+    cx.fillStyle = "#5a5560";
+    cx.fillRect(-9, 26, 6, 8 + Math.sin(f.bob) * 2);
+    cx.fillRect(3, 26, 6, 8 - Math.sin(f.bob) * 2);
+
+    if (f.type === "knight") {
+      cx.fillStyle = "#8c94a4";
+      cx.beginPath(); cx.moveTo(-20, -6); cx.lineTo(-8, -6); cx.lineTo(-8, 18);
+      cx.lineTo(-14, 24); cx.lineTo(-20, 18); cx.closePath(); cx.fill();
+    }
+    if (f.type === "leaper") {   // the pole, so the vault reads before it happens
+      cx.strokeStyle = "#8a6f3c"; cx.lineWidth = 3;
+      cx.beginPath(); cx.moveTo(-16, 30); cx.lineTo(6, -22); cx.stroke();
+    }
+    cx.restore();
+
+    if (f.burn > 0) {
+      cx.font = "15px serif"; cx.textAlign = "center";
+      cx.fillText("🔥", f.x, y - 34 + Math.sin(S.t * 14) * 2);
+    }
+    if (bonked) {
+      cx.font = "bold 15px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText("✶ ✶", f.x, y - 36 - (0.5 - f.bonk) * 12);
+    }
+    const fr = clamp(f.hp / f.maxHp, 0, 1);
+    if (fr < 1) {
+      cx.fillStyle = "rgba(0,0,0,0.55)"; cx.fillRect(f.x - 20, y + 40, 40, 4);
+      cx.fillStyle = "#d1553f"; cx.fillRect(f.x - 20, y + 40, 40 * fr, 4);
+    }
+  }
+
+  function drawHoard() {
+    const pile = clamp(S.coins / 900, 0.1, 1);
+    const baseY = H - 26;
+    const grd = cx.createRadialGradient(48, baseY - 40, 4, 48, baseY - 40, 190);
+    grd.addColorStop(0, "rgba(232,192,90," + (0.16 + pile * 0.2) + ")");
+    grd.addColorStop(1, "transparent");
+    cx.fillStyle = grd; cx.fillRect(0, 0, 260, H);
+
+    cx.fillStyle = "#1b1720"; cx.fillRect(0, OY, OX, ROWS * CELL);
+
+    const h = 30 + pile * 300;
+    cx.fillStyle = "#8a7134";
+    cx.beginPath(); cx.moveTo(-10, baseY);
+    cx.quadraticCurveTo(OX * 0.5, baseY - h, OX + 14, baseY);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "#e8c05a";
+    for (let i = 0; i < 26; i++) {
+      const a = (i * 2.399) % 1, b = (i * 4.771) % 1;
+      const px = 6 + a * (OX - 6);
+      const py = baseY - b * h * (1 - Math.abs(px / OX - 0.5)) * 0.9;
+      cx.beginPath(); cx.ellipse(px, py, 6, 3.4, 0.3, 0, 6.284); cx.fill();
+    }
+    cx.font = "11px 'Trebuchet MS', sans-serif";
+    cx.fillStyle = "#8a7134"; cx.textAlign = "center";
+    cx.fillText("THE CARAVAN", OX / 2, OY - 16);
+  }
+
+  function render() {
+    cx.clearRect(0, 0, W, H);
+    cx.fillStyle = "#151318"; cx.fillRect(0, 0, W, H);
+
+    for (let r = 0; r < ROWS; r++) {
+      const sealed = S.sealed.has(r), wet = S.flooded.has(r);
+      cx.fillStyle = sealed ? "#100e13" : wet ? (r % 2 ? "#1e2733" : "#222c39") : (r % 2 ? "#241f26" : "#2a2430");
+      cx.fillRect(OX, OY + r * CELL, COLS * CELL, CELL);
+      if (wet) {
+        cx.strokeStyle = "rgba(120,180,220,0.16)"; cx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          const yy = OY + r * CELL + 20 + i * 20;
+          cx.beginPath();
+          for (let xx = OX; xx < OX + COLS * CELL; xx += 12) {
+            cx.lineTo(xx, yy + Math.sin((xx + S.t * 40 + i * 30) / 26) * 2.2);
+          }
+          cx.stroke();
+        }
+      }
+    }
+    cx.strokeStyle = "rgba(0,0,0,0.35)"; cx.lineWidth = 1;
+    for (let c = 0; c <= COLS; c++) {
+      cx.beginPath(); cx.moveTo(OX + c * CELL, OY); cx.lineTo(OX + c * CELL, OY + ROWS * CELL); cx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      cx.beginPath(); cx.moveTo(OX, OY + r * CELL); cx.lineTo(OX + COLS * CELL, OY + r * CELL); cx.stroke();
+    }
+
+    for (const key of S.rubble) {
+      const [c, r] = key.split(",").map(Number);
+      const x = OX + c * CELL, y = OY + r * CELL;
+      cx.fillStyle = "#1a161d"; cx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      cx.fillStyle = "#3b3340";
+      for (let i = 0; i < 6; i++) {
+        const a = (i * 2.399) % 1, b = (i * 4.771) % 1;
+        cx.beginPath();
+        cx.ellipse(x + 18 + a * 60, y + 26 + b * 50, 11 - i, 8 - i * 0.6, a * 3, 0, 6.284);
+        cx.fill();
+      }
+    }
+
+    if (S.selUnit && hover.col >= 0) {
+      const u = UNITS[S.selUnit];
+      const ok = !gobAt(hover.col, hover.row) && !blocked(hover.col, hover.row)
+                 && S.coins >= u.cost
+                 && !(S.flooded.has(hover.row) && S.selUnit !== "barricade");
+      cx.fillStyle = ok ? "rgba(111,191,91,0.2)" : "rgba(209,85,63,0.2)";
+      cx.fillRect(OX + hover.col * CELL, OY + hover.row * CELL, CELL, CELL);
+    }
+
+    drawHoard();
+
+    for (let r = 0; r < ROWS; r++) {
+      if (S.sealed.has(r)) continue;
+      const y = laneY(r) + 62;
+      cx.globalAlpha = S.traps[r] ? 1 : 0.14;
+      cx.strokeStyle = "#8f8698"; cx.lineWidth = 2.5;
+      cx.beginPath(); cx.arc(OX + 22, y, 13, Math.PI, 0); cx.stroke();
+      cx.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const tx = OX + 22 - 13 + i * 5.2;
+        cx.moveTo(tx, y - 1); cx.lineTo(tx + 2.6, y - 8); cx.lineTo(tx + 5.2, y - 1);
+      }
+      cx.stroke();
+      cx.fillStyle = "#5b5464";
+      cx.beginPath(); cx.ellipse(OX + 22, y + 2, 15, 4, 0, 0, 6.284); cx.fill();
+      cx.globalAlpha = 1;
+    }
+
+    S.goblins.forEach(drawGoblin);
+
+    for (const s of S.shots) {
+      if (s.big) {
+        cx.strokeStyle = s.fire ? "#e08040" : "#c9a0e0"; cx.lineWidth = 4; cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(s.x - 30, s.y); cx.lineTo(s.x + 14, s.y); cx.stroke();
+      } else {
+        cx.fillStyle = s.bee ? "#e8c05a" : s.fire ? "#e08040" : "#a89b8c";
+        cx.beginPath(); cx.arc(s.x, s.y, s.fire ? 7 : 5.5, 0, 6.284); cx.fill();
+      }
+    }
+
+    S.foes.forEach(drawFoe);
+
+    for (const j of S.junk) {
+      const fade = j.life < 3 ? 0.4 + Math.abs(Math.sin(j.life * 6)) * 0.6 : 1;
+      cx.globalAlpha = fade;
+      cx.fillStyle = "rgba(232,192,90,0.16)";
+      cx.beginPath(); cx.arc(j.x, j.y, 20, 0, 6.284); cx.fill();
+      cx.font = "24px serif"; cx.textAlign = "center";
+      cx.fillText(ITEMS[j.key].emoji, j.x, j.y + Math.sin(j.bob) * 3 + 8);
+      cx.globalAlpha = 1;
+    }
+
+    for (const p of S.puffs) {
+      const a = 1 - p.t / 0.5;
+      cx.globalAlpha = a;
+      cx.strokeStyle = p.kind === "boom" ? "#e08040" : p.kind === "steal" ? "#d1553f"
+                     : p.kind === "bonk" ? "#e8c05a" : "#6a6070";
+      cx.lineWidth = 3;
+      cx.beginPath(); cx.arc(p.x, p.y, p.r * (1 - a) + 8, 0, 6.284); cx.stroke();
+      cx.globalAlpha = 1;
+    }
+    for (const c of S.coinPops) {
+      cx.globalAlpha = 1 - c.t / 0.7;
+      cx.font = "bold 14px 'Trebuchet MS', sans-serif";
+      cx.fillStyle = "#e8c05a"; cx.textAlign = "center";
+      cx.fillText("+" + Math.round(c.n), c.x, c.y - c.t * 46);
+      cx.globalAlpha = 1;
+    }
+
+    cx.textAlign = "center";
+    if (S.phase === "breather" && !S.over && !S.choosing) {
+      const next = S.wave + 1, big = isBanner(next);
+      const pulse = 0.55 + Math.sin(S.t * (big ? 7 : 4)) * 0.3;
+      cx.font = (big ? 40 : 34) + "px Impact, sans-serif";
+      cx.fillStyle = big ? "rgba(209,85,63," + pulse + ")" : "rgba(232,192,90," + pulse + ")";
+      cx.fillText(big ? "THEY ARE MASSING — WAVE " + next : "WAVE " + next + " APPROACHING", W / 2, OY - 22);
+
+      // A new kind of pursuer is never a surprise the first time: name it, and name
+      // its answer, while there is still a breather left to go and buy that answer.
+      const debut = FOE_KEYS.filter(k => FOES[k].from === next);
+      if (debut.length) {
+        const f = FOES[debut[0]];
+        cx.fillStyle = "rgba(232,192,90,0.95)";
+        cx.font = "bold 17px 'Trebuchet MS', sans-serif";
+        cx.fillStyle = "rgba(13,11,16,0.72)";
+        cx.fillRect(W / 2 - 300, OY + 22, 600, 54);
+        cx.fillStyle = "rgba(232,192,90,0.95)";
+        cx.fillText("NEW: " + f.name.toUpperCase(), W / 2, OY + 42);
+        cx.fillStyle = "#e6dfd4";
+        cx.font = "15px 'Trebuchet MS', sans-serif";
+        cx.fillText(f.line, W / 2, OY + 64);
+      }
+    }
+    if (S.over) {
+      cx.fillStyle = "rgba(13,11,16,0.88)"; cx.fillRect(0, 0, W, H);
+      cx.font = "58px Impact, sans-serif"; cx.fillStyle = "#d1553f";
+      cx.fillText("THEY CAUGHT THE CARAVAN", W / 2, H / 2 - 16);
+      cx.font = "20px 'Trebuchet MS', sans-serif"; cx.fillStyle = "#e6dfd4";
+      cx.fillText("Depth " + S.depth + ", wave " + S.wave + ".", W / 2, H / 2 + 22);
+      cx.fillStyle = "#9a9089"; cx.font = "15px 'Trebuchet MS', sans-serif";
+      cx.fillText("Click anywhere to run again.", W / 2, H / 2 + 54);
+    }
+    if (S.paused && !S.over && !S.choosing) {
+      cx.fillStyle = "rgba(13,11,16,0.7)"; cx.fillRect(0, 0, W, H);
+      cx.font = "46px Impact, sans-serif"; cx.fillStyle = "#e8c05a";
+      cx.fillText("PAUSED", W / 2, H / 2);
+    }
+  }
+
+  // ------------------------------------------------------------------ input
+  const hover = { col: -1, row: -1 };
+  const toBoard = ev => {
+    const r = cv.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) * (W / r.width), y: (ev.clientY - r.top) * (H / r.height) };
+  };
+
+  cv.addEventListener("mousemove", ev => {
+    const p = toBoard(ev);
+    hover.col = Math.floor((p.x - OX) / CELL);
+    hover.row = Math.floor((p.y - OY) / CELL);
+    if (hover.col < 0 || hover.col >= COLS || hover.row < 0 || hover.row >= ROWS) { hover.col = -1; hover.row = -1; }
+  });
+  cv.addEventListener("mouseleave", () => { hover.col = -1; hover.row = -1; });
+  cv.addEventListener("contextmenu", ev => { ev.preventDefault(); clearSel(); });
+
+  cv.addEventListener("click", ev => {
+    if (S.over) { newRun(); renderAll(); return; }
+    if (S.choosing) return;
+    if (S.paused) return;      // pause was a free planning phase; it isn't any more
+    const p = toBoard(ev);
+
+    const j = S.junk.find(j => Math.hypot(j.x - p.x, j.y - p.y) < 34);
+    if (j && S.satchel.length < 10) {
+      S.satchel.push(j.key);
+      S.junk = S.junk.filter(x => x !== j);
+      renderSlots();
+      return;
+    }
+
+    const col = Math.floor((p.x - OX) / CELL), row = Math.floor((p.y - OY) / CELL);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+    const occ = gobAt(col, row);
+
+    if (S.selItem !== null) {
+      if (occ) {
+        const key = S.satchel[S.selItem];
+        const full = occ.items.length >= RANK_SLOTS(occ.tier);
+        if (!full && !occ.items.includes(key)) {
+          occ.items.push(key);
+          if (key === "helm") occ.hp += 160 * RANK_POWER(occ.tier);
+          S.satchel.splice(S.selItem, 1);
+          S.selItem = null;
+          renderSlots();
+        } else {
+          // Full, or already carrying this. Silently doing nothing just confuses —
+          // hand the goblin to the inspector so it can say why.
+          S.selItem = null;
+          S.selGob = occ;
+          renderSlots(); renderInspector();
+        }
+      }
+      return;
+    }
+
+    if (S.selUnit) {
+      if (occ || blocked(col, row)) return;
+      if (S.flooded.has(row) && S.selUnit !== "barricade") return;
+      const u = UNITS[S.selUnit];
+      if (S.coins >= u.cost) {
+        S.coins -= u.cost;
+        const warm = S.selUnit === "hoarder" ? rnd(3, 12.5) : 0.6;
+        S.goblins.push({ roles: [S.selUnit], col, row, hp: u.hp, tier: 1,
+                         cds: { [S.selUnit]: warm }, items: [], pop: 0, recoil: 0, hurtT: 0 });
+        // Deselect after placing, as PvZ does — otherwise a sticky selection makes
+        // clicking a goblin to merge impossible without hitting Escape first.
+        S.selUnit = null;
+        renderRack();
+      }
+      return;
+    }
+
+    // merging: pick one up, then click a matching one
+    if (occ) {
+      if (!S.selGob) { S.selGob = occ; return; }
+      if (S.selGob === occ) { S.selGob = null; return; }
+      const from = S.selGob;
+      const sameKind = roleKey(occ) === roleKey(from);
+      const union = [...new Set([...occ.roles, ...from.roles])];
+      const canRank = sameKind && occ.tier === from.tier && occ.tier < MAX_TIER;
+      const canHybrid = !sameKind && occ.tier === from.tier && union.length <= MAX_ROLES;
+
+      if (canRank || canHybrid) {
+        if (canRank) occ.tier++;
+        else {
+          // Cross-kind: keep the rank, gain the other's job. Cooldowns start ready so
+          // the new half doesn't sit idle for a full cycle.
+          occ.roles = union;
+          for (const r of union) if (occ.cds[r] === undefined) occ.cds[r] = 0.6;
+        }
+        for (const k of from.items) {
+          if (!occ.items.includes(k) && occ.items.length < RANK_SLOTS(occ.tier)) occ.items.push(k);
+        }
+        occ.hp = maxHpOf(occ);
+        S.goblins = S.goblins.filter(g => g !== from);
+        S.selGob = occ;
+        S.puffs.push({ x: cellOf(occ).x + 48, y: cellOf(occ).y + 48, t: 0, r: 70, kind: "boom" });
+        renderInspector();
+      } else {
+        S.selGob = occ;
+      }
+    } else S.selGob = null;
+  });
+
+  function clearSel() { S.selUnit = null; S.selItem = null; S.selGob = null; renderRack(); renderSlots(); }
+  addEventListener("keydown", e => { if (e.key === "Escape") clearSel(); });
+
+  // ------------------------------------------------------------------ chrome
+  const rack = document.getElementById("rack");
+  function renderRack() {
+    rack.innerHTML = "";
+    for (const [key, u] of Object.entries(UNITS)) {
+      const b = document.createElement("button");
+      b.className = "card"; b.type = "button";
+      b.style.setProperty("--unit", u.tint);
+      b.disabled = S.coins < u.cost;
+      b.setAttribute("aria-pressed", String(S.selUnit === key));
+      b.innerHTML = '<span class="card-name">' + u.name + "</span>" +
+                    '<span class="card-cost">' + u.cost + " coins</span>" +
+                    '<span class="card-desc">' + u.desc + "</span>";
+      b.addEventListener("click", () => {
+        S.selUnit = S.selUnit === key ? null : key;
+        S.selItem = null; S.selGob = null;
+        renderRack(); renderSlots();
+      });
+      rack.appendChild(b);
+    }
+  }
+
+  const slotsEl = document.getElementById("slots");
+  const hint = document.getElementById("satchel-hint");
+  function renderSlots() {
+    // an empty satchel is a dashed box eating a row on a phone
+    slotsEl.closest(".satchel").classList.toggle("empty", !S.satchel.length);
+    slotsEl.innerHTML = "";
+    S.satchel.forEach((key, i) => {
+      const b = document.createElement("button");
+      b.className = "slot"; b.type = "button";
+      b.title = ITEMS[key].name + " — " + ITEMS[key].blurb;
+      b.setAttribute("aria-pressed", String(S.selItem === i));
+      b.textContent = ITEMS[key].emoji;
+      b.addEventListener("click", () => {
+        S.selItem = S.selItem === i ? null : i;
+        S.selUnit = null; S.selGob = null;
+        renderSlots(); renderRack();
+      });
+      slotsEl.appendChild(b);
+    });
+    hint.textContent = S.selItem !== null
+      ? "Click a goblin to bolt on the " + ITEMS[S.satchel[S.selItem]].name + "."
+      : S.satchel.length
+        ? "Click an item, then a goblin. Six per goblin."
+        : "Junk drops when pursuers die — that is the only way to get it. Click it up, then click a goblin to bolt it on.";
+  }
+
+  // What a given piece of junk actually does on a given goblin, in words. The emoji
+  // alone told nobody anything, and a title attribute is invisible on a phone.
+  function effectOf(key, g) {
+    const shoots = has(g, "chucker") || has(g, "ballista") || has(g, "bomber");
+    switch (key) {
+      case "helm":   return "+160 max health, scaled by rank";
+      case "spring": return "Acts 1.6× as often — every job it holds"
+                          + (has(g, "barricade") ? ", and knocks attackers back" : "");
+      case "bees":   return has(g, "chucker") ? "Throws a three-way spread" : null;
+      case "torch":  return has(g, "barricade") ? "Burns whatever attacks it"
+                          : shoots ? "Sets them alight — burn damage over time" : null;
+      case "spikes": return "Cuts anything that attacks it, 10 a second";
+      default:       return null;
+    }
+  }
+
+  // Two roles average their colours, so a hybrid reads as its own thing on the board.
+  function blendTints(roles) {
+    if (roles.length === 1) return UNITS[roles[0]].tint;
+    const rgb = roles.map(r => UNITS[r].tint)
+      .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+    const avg = [0, 1, 2].map(i => Math.round(rgb.reduce((s, c) => s + c[i], 0) / rgb.length));
+    return "#" + avg.map(v => v.toString(16).padStart(2, "0")).join("");
+  }
+
+  const inspEmpty = document.getElementById("insp-empty");
+  const inspBody = document.getElementById("insp-body");
+  const inspName = document.getElementById("insp-name");
+  const inspMeta = document.getElementById("insp-meta");
+  const inspItems = document.getElementById("insp-items");
+
+  function renderInspector() {
+    const g = S.selGob;
+    const box = document.getElementById("inspector");
+    if (!g || g.hp <= 0) {
+      inspEmpty.hidden = false;
+      inspBody.hidden = true;
+      box.classList.add("vacant");   // so compact layouts can drop the empty strip
+      return;
+    }
+    inspEmpty.hidden = true;
+    inspBody.hidden = false;
+    box.classList.remove("vacant");
+    inspName.textContent = fullName(g);
+    const slots = RANK_SLOTS(g.tier);
+    inspMeta.textContent =
+      "rank " + g.tier + (g.tier < MAX_TIER ? "" : " (max)") +
+      " · " + Math.round(g.hp) + "/" + Math.round(maxHpOf(g)) + " hp" +
+      " · ×" + eff(g).toFixed(2) + " output" +
+      " · junk " + g.items.length + "/" + slots;
+
+    inspItems.innerHTML = "";
+    // Spell the jobs out — a hybrid's name alone doesn't say what it actually does.
+    for (const r of g.roles) {
+      const li = document.createElement("li");
+      li.innerHTML = '<span class="insp-em">•</span>' +
+                     '<span class="insp-what">' + UNITS[r].name + " job</span>" +
+                     '<span class="insp-does">' + UNITS[r].desc + "</span>";
+      inspItems.appendChild(li);
+    }
+    if (g.roles.length > 1) {
+      const li = document.createElement("li");
+      li.className = "insp-free";
+      li.textContent = "Two jobs, each at " + Math.round(HYBRID_EFF * 100) +
+                       "% — 1.4 goblins of work in one cell.";
+      inspItems.appendChild(li);
+    }
+    for (const k of g.items) {
+      const does = effectOf(k, g);
+      const li = document.createElement("li");
+      li.innerHTML = '<span class="insp-em">' + ITEMS[k].emoji + "</span>" +
+                     '<span class="insp-what">' + ITEMS[k].name + "</span>" +
+                     '<span class="insp-does' + (does ? "" : " nil") + '">' +
+                       (does || "Does nothing on a " + kindName(g)) + "</span>";
+      inspItems.appendChild(li);
+    }
+    const li = document.createElement("li");
+    li.className = "insp-free";
+    const moreSlots = g.tier < MAX_TIER && RANK_SLOTS(g.tier + 1) > slots;
+    li.textContent = g.roles.length < MAX_ROLES && g.items.length >= slots && !moreSlots
+      ? "Full. Merge with a different kind of goblin to gain its job."
+      : g.items.length < slots
+      ? (slots - g.items.length) + " slot" + (slots - g.items.length === 1 ? "" : "s") + " free" +
+        (moreSlots ? " — merge to rank " + (g.tier + 1) + " for " + RANK_SLOTS(g.tier + 1) : "")
+      : moreSlots
+        ? "Full. Merge with another rank-" + g.tier + " " + kindName(g) +
+          " for " + RANK_SLOTS(g.tier + 1) + " slots."
+        : g.tier < MAX_TIER
+          ? "Full. Merging raises output to ×" + RANK_POWER(g.tier + 1).toFixed(1) + ", but adds no slots."
+          : "Full, and at maximum rank.";
+    inspItems.appendChild(li);
+  }
+
+  document.getElementById("insp-remove").addEventListener("click", () => {
+    const g = S.selGob;
+    if (!g) return;
+    const back = refundOf(g);
+    addCoins(back, cellOf(g).x + 48, cellOf(g).y + 40);
+    S.goblins = S.goblins.filter(x => x !== g);
+    S.selGob = null;
+    renderInspector();
+  });
+
+  const hzEl = document.getElementById("hud-hazards");
+  function renderHazards() {
+    hzEl.innerHTML = "";
+    if (!S.hazards.length) { hzEl.innerHTML = '<span class="hz-empty">no hazards yet</span>'; return; }
+    for (const h of S.hazards) {
+      const s = document.createElement("span");
+      s.className = "hz-chip";
+      s.textContent = h.name;
+      s.title = h.hazard;
+      hzEl.appendChild(s);
+    }
+  }
+
+  (function bestiary() {
+    const el = document.getElementById("bestiary");
+    for (const k of FOE_KEYS) {
+      const f = FOES[k];
+      const d = document.createElement("div");
+      d.className = "bx";
+      d.innerHTML = '<div class="bx-name">' + f.name + "</div>" +
+                    '<div class="bx-line">' + f.line + "</div>" +
+                    '<div class="bx-fix">Answer: ' + f.fix + "</div>";
+      el.appendChild(d);
+    }
+  })();
+
+  const elCoins = document.getElementById("hud-coins");
+  const elIncome = document.getElementById("hud-income");
+  const elWave = document.getElementById("hud-wave");
+  const elDepth = document.getElementById("hud-depth");
+  const elChamber = document.getElementById("hud-chamber");
+  const elStatus = document.getElementById("hud-status");
+
+  function renderAll() { renderRack(); renderSlots(); renderHazards(); renderInspector(); }
+
+  document.getElementById("restart").addEventListener("click", () => {
+    document.getElementById("descent").classList.remove("on");
+    newRun(); renderAll();
+  });
+  // ---- fullscreen play -----------------------------------------------------
+  // Android honours the orientation lock; iOS Safari ignores it (and only allows
+  // fullscreen on some elements), so the CSS nudge to turn the phone is the
+  // fallback rather than the exception.
+  const gameEl = document.getElementById("game");
+  const fsBtn = document.getElementById("fullscreen");
+  const inFullscreen = () => document.fullscreenElement || document.webkitFullscreenElement;
+
+  let faux = false;   // true when we're faking it because the platform said no
+
+  function setFsChrome(on) {
+    gameEl.classList.toggle("fs", on);
+    gameEl.classList.toggle("faux", on && faux);
+    document.body.classList.toggle("faux-on", on && faux);
+    fsBtn.textContent = on ? "Exit fullscreen" : "Play fullscreen";
+  }
+
+  async function enterFullscreen() {
+    const req = gameEl.requestFullscreen || gameEl.webkitRequestFullscreen;
+    faux = !req;
+    if (req) {
+      try { await req.call(gameEl, { navigationUI: "hide" }); }
+      catch { faux = true; }            // refused (iOS, permissions policy) — fake it
+    }
+    try {
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock("landscape");
+    } catch { /* refused; the nudge asks the player to turn the phone instead */ }
+    setFsChrome(true);
+  }
+
+  async function exitFullscreen() {
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); }
+    catch { /* nothing to undo */ }
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!faux && exit) { try { await exit.call(document); } catch { /* already out */ } }
+    faux = false;
+    setFsChrome(false);
+  }
+
+  fsBtn.addEventListener("click", () => {
+    if (gameEl.classList.contains("fs")) exitFullscreen();
+    else enterFullscreen();
+  });
+  document.getElementById("fs-exit").addEventListener("click", exitFullscreen);
+
+  const panelsBtn = document.getElementById("panels");
+  panelsBtn.addEventListener("click", () => {
+    const open = gameEl.classList.toggle("extras");
+    panelsBtn.textContent = open ? "Build ▾" : "Build ▸";
+  });
+
+  // Leaving via Esc or a system gesture has to unwind our chrome too.
+  for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+    document.addEventListener(ev, () => {
+      if (!inFullscreen() && !faux) setFsChrome(false);
+    });
+  }
+  addEventListener("keydown", e => {
+    if (e.key === "Escape" && faux && gameEl.classList.contains("fs")) exitFullscreen();
+  });
+
+  const pauseBtn = document.getElementById("pause");
+  pauseBtn.addEventListener("click", () => {
+    S.paused = !S.paused;
+    pauseBtn.textContent = S.paused ? "Resume" : "Pause";
+  });
+
+  // ------------------------------------------------------------------ loop
+  let last = performance.now(), affordSig = null, inspSig = null;
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    if (!S.paused && !S.over && !S.choosing) update(dt);
+    render();
+
+    elCoins.textContent = Math.round(S.coins);
+    elIncome.textContent = "+" + income().toFixed(1) + " / sec";
+    elWave.textContent = S.wave;
+    elDepth.textContent = S.depth;
+    elChamber.textContent = CHAMBER_NAMES[Math.min(S.depth - 1, CHAMBER_NAMES.length - 1)];
+    elStatus.textContent = S.over ? "caught"
+      : S.choosing ? "choosing a route"
+      : S.phase === "breather" ? "regrouping"
+      : S.foes.length + " closing in";
+
+    const sig = Object.keys(UNITS).map(k => S.coins >= UNITS[k].cost).join("");
+    if (sig !== affordSig) { affordSig = sig; renderRack(); }
+
+    const g = S.selGob;
+    const isig = g && g.hp > 0 ? g.type + g.tier + g.items.join() + Math.round(g.hp) : "none";
+    if (isig !== inspSig) { inspSig = isig; renderInspector(); }
+
+    requestAnimationFrame(frame);
+  }
+
+  // Prototype debug handle — poke at a run from the console:
+  //   __hoard.state.coins = 5000        give yourself room to experiment
+  //   __hoard.skipTo(9)                 jump the wave counter to test late game
+  //   __hoard.descend()                 open the route choice right now
+  window.__hoard = {
+    get state() { return S; },
+    descend: offerDescent,
+    skipTo(n) { S.wave = n; S.queue = []; S.foes = []; S.phase = "breather"; S.phaseT = 1; },
+    previewWave(n) {
+      const q = buildWave(n), c = {};
+      for (const e of q) c[e.type] = (c[e.type] || 0) + 1;
+      return { total: q.length, mix: c };
+    },
+  };
+
+  renderAll();
+  requestAnimationFrame(frame);
+})();
+</script>
