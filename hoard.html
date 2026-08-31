@@ -242,6 +242,9 @@
               border-left: 3px solid var(--role, var(--gold-dim)); border-radius: 4px;
               padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; }
   .lib-card.locked { opacity: .5; }
+  .lib-head { display: flex; align-items: center; gap: 8px; }
+  .lib-icon { flex: 0 0 auto; width: 80px; height: 80px;
+              background: rgba(0,0,0,.22); border-radius: 4px; }
   .lib-name { font-family: var(--display); font-size: 16px; text-transform: uppercase;
               letter-spacing: .02em; line-height: 1.1; }
   .lib-name i { font-family: var(--body); font-size: 10px; text-transform: none;
@@ -295,6 +298,7 @@
     <button class="btn" id="restart" type="button">New chamber</button>
     <button class="btn" id="pause" type="button">Pause</button>
     <button class="btn on" id="mute" type="button">Sound on</button>
+    <button class="btn" id="library" type="button">Library</button>
 
   </div>
 
@@ -580,10 +584,18 @@
     let spec = cn === 1 ? { cd: weak ? 1.7 : 1.3, dmg: weak ? 12 : 22 }
              : cn === 2 ? { cd: 1.25, dmg: 42 }
                         : { cd: 1.2,  dmg: 61 };
+    // Bowpair, Bunker and Coinsmith are their own thing, not just their tier's stock
+    // numbers - kept here too so the Library never disagrees with the live shot above.
+    const pk = [...parts].sort().join("+");
+    if (pk === "chucker+chucker") spec = { ...spec, dmg: 29 };
+    else if (pk === "barricade+chucker") spec = { ...spec, dmg: 25 };
     if (cOf("keg") > 0) spec = { ...spec, aoe: 46 + 14 * cOf("keg"), aoeDmg: Math.round(spec.dmg * 0.55) };
     if (cOf("hollerer") > 0) spec = { ...spec, slow: 1.1 };
     if (cOf("sapper") > 0) spec = { ...spec, shove: Math.min(10, 4 * cOf("sapper")) };
     if (cOf("tollkeep") > 0) spec = { ...spec, bounty: 7 * cOf("tollkeep") };
+    if (pk === "chucker+chucker") spec = { ...spec, bounce: 11 };
+    if (pk === "barricade+chucker") spec = { ...spec, shove: 5.65 };
+    if (pk === "chucker+digger") spec = { ...spec, goldenChance: 0.2 };
     return spec;
   }
 
@@ -982,6 +994,11 @@
                                   pierce: 0, kind: "rock", snd: "throw" }
                    : cn === 2 ? { cd: 1.25, dmg: 42, pierce: 0, kind: "arrow", snd: "bow" }
                               : { cd: 1.2,  dmg: 61, pierce: 0, kind: "bolt",  snd: "bolt" };
+          // Three named 2-part bodies are not just their tier's stock numbers - each
+          // gets its own identity on top. See the Library for the full writeup.
+          const pk = partsKey(g);
+          if (pk === "chucker+chucker") spec = { ...spec, dmg: 29 };
+          else if (pk === "barricade+chucker") spec = { ...spec, dmg: 25 };
           // the run's upgrades reshape the shot rather than scaling it
           if (gobHas(g, "quarryman")) spec = { ...spec, cd: spec.cd * 1.8,
                                                dmg: Math.round(spec.dmg * 2.6), kind: "bolt" };
@@ -1000,12 +1017,21 @@
           if (countOf(g, "sapper") > 0)
             spec = { ...spec, shove: Math.min(10, 4 * countOf(g, "sapper")) };
           if (countOf(g, "tollkeep") > 0) spec = { ...spec, bounty: 7 * countOf(g, "tollkeep") };
+          // Bowpair's second arrow ricochets to a random neighbour in the lane, Bunker's
+          // heavier bolt staggers whatever it hits, and Coinsmith's shot is sometimes
+          // struck gold — three fusions with their own trick instead of just a bigger
+          // number. Layered on last so they read the same as any other body trait.
+          if (pk === "chucker+chucker") spec = { ...spec, bounce: 11 };
+          if (pk === "barricade+chucker") spec = { ...spec, shove: 5.65 };
+          if (pk === "chucker+digger" && Math.random() < 0.2)
+            spec = { ...spec, dmg: spec.dmg * 2, golden: true };
           g.cd = spec.cd;
           S.shots.push({ x: p.x + CELL * 0.62, y: p.y + CELL * 0.46, lane: g.row,
                          dmg: spec.dmg, pierce: spec.pierce, kind: spec.kind, trail: [], spin: 0,
-                         aoe: spec.aoe, aoeDmg: spec.aoeDmg, slow: spec.slow,
-                         shove: spec.shove, bounty: spec.bounty });
+                         aoe: spec.aoe, aoeDmg: spec.aoeDmg, slow: spec.slow, shove: spec.shove,
+                         bounty: spec.bounty, bounce: spec.bounce, golden: spec.golden });
           if (cn === 3) kick(3);
+          if (spec.golden) Sound.play("coin");
           Sound.play(spec.snd);
           burst(p.x + CELL * 0.64, p.y + CELL * 0.46, 3,
                 { colors: ["#cbbfa8"], spread: 70, size: [1.2, 2.2], dir: 0, cone: 1.1,
@@ -1096,7 +1122,7 @@
 
     // ---- shots
     for (const s of S.shots) {
-      s.x += 430 * dt; s.spin += dt * 16;
+      s.x += (s.vx !== undefined ? s.vx : 430) * dt; s.spin += dt * 16;
       s.trail.push({ x: s.x, y: s.y });
       if (s.trail.length > 6) s.trail.shift();
       const f = S.foes.find(f => f.lane === s.lane && f.hp > 0 && Math.abs(f.x - s.x) < 22
@@ -1119,6 +1145,33 @@
           burst(s.x, s.y, 9, { colors: ["#e8c05a", "#fff3cf", "#d1553f"], spread: 260,
                                size: [1.4, 3.2], life: [0.14, 0.36] });
           kick(2.4); Sound.play("hit");
+        }
+        if (s.bounce) {
+          // Every hit ricochets, not just the ones that happen to kill - there is no
+          // hp check here at all. It prefers whoever was standing right behind the
+          // hero it just hit, continuing the same way the shot was already flying;
+          // only when nobody is behind does it reach for the nearest hero in front,
+          // so a Bowpair with just one hero in its lane still gets its second hit
+          // instead of the ricochet quietly doing nothing.
+          const rest = S.foes.filter(o => o !== f && o.lane === s.lane && o.hp > 0);
+          const ahead = rest.filter(o => o.x > f.x);
+          const pool = ahead.length ? ahead : rest;
+          if (pool.length) {
+            let near = pool[0];
+            for (const o of pool) if (Math.abs(o.x - f.x) < Math.abs(near.x - f.x)) near = o;
+            const vx = 430 * (near.x >= f.x ? 1 : -1);
+            // The spark is born standing right on top of f - without this it can
+            // find f again on its very first step and double-hit the hero the
+            // primary arrow just landed on instead of ever reaching anyone else,
+            // which read as the ricochet just adding to that hero's own death blow.
+            S.shots.push({ x: s.x, y: s.y, lane: s.lane, dmg: s.bounce, pierce: 0,
+                           kind: "spark", trail: [], spin: 0, vx, hitSet: new Set([f]) });
+            // fired the instant the first arrow lands, so the ricochet reads as one
+            // motion rather than a second, separate shot appearing out of nowhere
+            ring(s.x, s.y, 14, "rgba(191,230,242,.75)", 2, 0.2);
+            burst(s.x, s.y, 4, { colors: ["#bfe6f2", "#fff3cf"], spread: 200,
+                                 size: [1, 2], life: [0.1, 0.24] });
+          }
         }
         if (soak && s.dmg <= soak + 4)
           burst(s.x, s.y, 3, { colors: ["#d9cdb4", "#8d8496"], spread: 90,
@@ -1515,6 +1568,163 @@
     }
   }
 
+  // A minimal affine-tracking stand-in for a 2D context: same save/restore/
+  // translate/scale bookkeeping a real one does, but every drawing call just folds
+  // its points through the current matrix into a running leftmost-x instead of
+  // painting anything. Lets drawGoblinIcon find out where its own content will land
+  // before it actually draws it.
+  function measureLeftX(paint) {
+    let m = [1, 0, 0, 1, 0, 0], stack = [], minX = Infinity;
+    const pt = (x, y) => { const px = m[0] * x + m[2] * y + m[4]; if (px < minX) minX = px; };
+    const mc = {
+      save() { stack.push(m.slice()); },
+      restore() { m = stack.pop(); },
+      translate(x, y) { m = [m[0], m[1], m[2], m[3], m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]; },
+      scale(sx, sy) { m = [m[0] * sx, m[1] * sx, m[2] * sy, m[3] * sy, m[4], m[5]]; },
+      beginPath() {}, closePath() {}, fill() {}, stroke() {},
+      moveTo: pt, lineTo: pt,
+      arc(x, y, r) { pt(x - r, y); pt(x + r, y); },
+      ellipse(x, y, rx) { pt(x - rx, y); pt(x + rx, y); },
+      rect(x, y, w) { pt(x, y); pt(x + w, y); },
+      fillRect(x, y, w) { pt(x, y); pt(x + w, y); },
+      set fillStyle(v) {}, get fillStyle() { return ""; },
+      set strokeStyle(v) {}, get strokeStyle() { return ""; },
+      set lineWidth(v) {}, get lineWidth() { return 1; },
+      set lineJoin(v) {}, get lineJoin() { return ""; },
+      set lineCap(v) {}, get lineCap() { return ""; },
+      set globalAlpha(v) {}, get globalAlpha() { return 1; },
+    };
+    paint(mc);
+    return minX === Infinity ? 0 : minX;
+  }
+
+  // A static portrait of a body, for the Library. Same shapes and tints as
+  // drawGoblin - same crew formation, same planking, same shared weapon - just idle
+  // (no squash, no lean, no blink) and drawn onto whatever context is handed in,
+  // never the shared board context, so opening the panel can never step on a live
+  // frame the board is mid-way through drawing.
+  //
+  // Every body draws around its own local (0,0), and how far that origin sits from
+  // its own leftmost pixel is different for every composition - three Barricades
+  // spread wider than one Chucker. Rather than hand-tune an offset per shape, the
+  // whole thing is painted once against measureLeftX to find that edge, then again
+  // for real, shifted so every icon's content starts flush against the same left
+  // margin regardless of what it is made of.
+  function drawGoblinIcon(ctx, parts, size) {
+    const bars = parts.filter(t => t === "barricade").length;
+    const crew = parts.filter(t => t !== "barricade");
+    const cn = parts.filter(t => t === "chucker").length;
+    const bodies = crew.length || 1;
+    const form = FORMATION[bodies];
+    const gs = GROUP[bodies];
+    const scale = size / 150;
+
+    const face = (c, sc, tint, look) => {
+      c.save(); c.scale(sc, sc);
+      const rw = 26, rh = 28;
+      c.lineJoin = "round";
+      c.strokeStyle = RIM; c.lineWidth = 5 / sc;
+      c.fillStyle = tint;
+      c.beginPath(); c.moveTo(-rw + 3, -6); c.lineTo(-rw - 15, -20); c.lineTo(-rw - 2, 4); c.closePath();
+      c.stroke(); c.fill();
+      c.beginPath(); c.moveTo(rw - 3, -6); c.lineTo(rw + 15, -20); c.lineTo(rw + 2, 4); c.closePath();
+      c.stroke(); c.fill();
+      c.beginPath(); c.ellipse(0, 0, rw, rh, 0, 0, 6.284); c.stroke(); c.fill();
+      c.fillStyle = "rgba(0,0,0,.22)";
+      c.beginPath(); c.ellipse(0, rh * 0.45, rw * 0.92, rh * 0.4, 0, 0, 6.284); c.fill();
+      const ey = -rh * 0.22;
+      c.fillStyle = "#fdfbf4";
+      c.beginPath(); c.ellipse(-9, ey, 7.5, 8.5, 0, 0, 6.284); c.fill();
+      c.beginPath(); c.ellipse(9, ey, 7.5, 8.5, 0, 0, 6.284); c.fill();
+      c.fillStyle = "#14110f";
+      c.beginPath(); c.arc(-9 + look, ey + 1, 3.4, 0, 6.284); c.fill();
+      c.beginPath(); c.arc(9 + look, ey + 1, 3.4, 0, 6.284); c.fill();
+      c.strokeStyle = "#14110f"; c.lineWidth = 2; c.lineCap = "round";
+      c.beginPath(); c.arc(0, rh * 0.12, 9, 0.25, Math.PI - 0.25); c.stroke();
+      c.fillStyle = "#fdfbf4";
+      c.fillRect(-5, rh * 0.12 + 5, 3.5, 4);
+      c.fillRect(2, rh * 0.12 + 5, 3.5, 4);
+      c.restore();
+    };
+
+    const paint = c => {
+      c.save();
+      c.translate(-bars * 7, 0);
+      c.scale(gs, gs);
+      for (let i = 0; i < bodies; i++) {
+        const [dx, dy, fsc] = form[i];
+        const type = crew[i] || "barricade";
+        const tint = (UNITS[type] && UNITS[type].tint) || "#6fbf5b";
+        c.save();
+        c.translate(dx, dy);
+        c.globalAlpha = i < bodies - 1 ? 0.93 : 1;
+        face(c, fsc, tint, type === "digger" ? -2 : 2);
+        if (type === "digger") {
+          c.save(); c.scale(fsc, fsc);
+          c.strokeStyle = RIM; c.lineWidth = 5; c.lineCap = "round";
+          c.beginPath(); c.moveTo(-20, 16); c.lineTo(-34, 30); c.stroke();
+          c.strokeStyle = "#9c7643"; c.lineWidth = 3; c.stroke();
+          c.strokeStyle = RIM; c.lineWidth = 6;
+          c.beginPath(); c.moveTo(-40, 22); c.lineTo(-28, 34); c.stroke();
+          c.strokeStyle = "#b9c0cc"; c.lineWidth = 3.4; c.stroke();
+          c.restore();
+        }
+        c.restore();
+      }
+      c.globalAlpha = 1;
+      c.restore();
+
+      if (bars) {
+        const n = bars, x0 = 26 + (bodies - 1) * 6 - bars * 7;
+        const h = 30 + n * 8;
+        c.strokeStyle = RIM; c.lineWidth = 4;
+        for (let i = 0; i < n; i++) {
+          const x = x0 + i * 9;
+          c.fillStyle = i % 2 ? "#6b4e2c" : "#8a6234";
+          c.beginPath(); c.rect(x, -h / 2, 8, h); c.stroke(); c.fill();
+        }
+        c.strokeStyle = "#3f2f1c"; c.lineWidth = 2.6;
+        c.beginPath(); c.moveTo(x0 - 2, -h * 0.22); c.lineTo(x0 + n * 9, -h * 0.22); c.stroke();
+        c.beginPath(); c.moveTo(x0 - 2, h * 0.22); c.lineTo(x0 + n * 9, h * 0.22); c.stroke();
+      }
+
+      if (parts.includes("hollerer")) {
+        c.strokeStyle = "rgba(154,127,196,.5)"; c.lineWidth = 3; c.lineCap = "round";
+        for (let i = 0; i < 3; i++) {
+          c.beginPath(); c.arc(6, -4, 28 + i * 9, -0.75, 0.75); c.stroke();
+        }
+      }
+
+      if (cn === 2) {
+        c.strokeStyle = RIM; c.lineWidth = 7; c.lineCap = "round";
+        c.beginPath(); c.arc(24, 2, 26, -1.15, 1.15); c.stroke();
+        c.strokeStyle = "#8a6234"; c.lineWidth = 4.5; c.stroke();
+        c.strokeStyle = "#d9cdb4"; c.lineWidth = 1.6;
+        c.beginPath(); c.moveTo(35, -22); c.lineTo(35, 26); c.stroke();
+      } else if (cn === 3) {
+        c.lineJoin = "round"; c.strokeStyle = RIM; c.lineWidth = 5;
+        c.fillStyle = "#6b4e2c";
+        c.beginPath(); c.rect(4, -9, 44, 11); c.stroke(); c.fill();
+        c.fillStyle = "#9c7643";
+        c.beginPath(); c.rect(0, -19, 12, 30); c.stroke(); c.fill();
+        c.strokeStyle = RIM; c.lineWidth = 8; c.lineCap = "round";
+        c.beginPath(); c.moveTo(34, -28); c.lineTo(34, 28); c.stroke();
+        c.strokeStyle = "#8a6234"; c.lineWidth = 5; c.stroke();
+        c.strokeStyle = "#d9cdb4"; c.lineWidth = 1.8;
+        c.beginPath(); c.moveTo(34, -26); c.lineTo(10, -4); c.lineTo(34, 26); c.stroke();
+      }
+    };
+
+    const minX = measureLeftX(paint);
+    const margin = size * 0.14;
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(margin - minX * scale, size / 2 + size * 0.05);
+    ctx.scale(scale, scale);
+    paint(ctx);
+    ctx.restore();
+  }
+
   // A goblin on the road. Same body as on the grid but off its cell, jogging, and
   // carrying a health bar - because the point of the march is that you watch it not
   // always make it.
@@ -1878,12 +2088,31 @@
         cx.fillStyle = "#e6dfd4";
         cx.beginPath(); cx.moveTo(8, -5); cx.lineTo(17, 0); cx.lineTo(8, 5); cx.closePath(); cx.fill();
         cx.fillStyle = "#c9a24a"; cx.fillRect(-15, -4, 5, 8);
+      } else if (s.kind === "spark") {
+        // Bowpair's ricochet: a small four-point spark, not a rock or an arrow -
+        // it reads as the second, unaimed half of the shot rather than another one.
+        cx.rotate(s.spin * 1.6);
+        cx.fillStyle = "#bfe6f2";
+        cx.beginPath();
+        cx.moveTo(0, -8); cx.lineTo(2.6, -2.6); cx.lineTo(8, 0);
+        cx.lineTo(2.6, 2.6); cx.lineTo(0, 8); cx.lineTo(-2.6, 2.6);
+        cx.lineTo(-8, 0); cx.lineTo(-2.6, -2.6); cx.closePath();
+        cx.fill();
+        cx.fillStyle = "#fff3cf";
+        cx.beginPath(); cx.arc(0, 0, 2.2, 0, 6.284); cx.fill();
       } else {
         cx.fillStyle = "#6b4e2c"; cx.fillRect(-22, -2.6, 34, 5.2);
         cx.fillStyle = "#f0e6cf";
         cx.beginPath(); cx.moveTo(12, -8); cx.lineTo(26, 0); cx.lineTo(12, 8); cx.closePath(); cx.fill();
         cx.fillStyle = "rgba(232,192,90,.35)";
         cx.beginPath(); cx.ellipse(-16, 0, 16, 5, 0, 0, 6.284); cx.fill();
+      }
+      // Coinsmith's 1-in-5 golden shot: struck gold before it even lands.
+      if (s.golden) {
+        cx.globalAlpha = 0.5 + Math.sin(S.t * 22) * 0.18;
+        cx.fillStyle = "#e8c05a";
+        cx.beginPath(); cx.arc(0, 0, 9, 0, 6.284); cx.fill();
+        cx.globalAlpha = 1;
       }
       cx.restore();
     }
@@ -2326,6 +2555,26 @@
     muteBtn.textContent = on ? "Sound on" : "Sound off";
     muteBtn.classList.toggle("on", on);
   });
+  // Opens the same panel the warren's own Library button does (wired up by the meta
+  // layer's script onto window.__hoard, since that is the one place both scripts
+  // already share) - just pauses the chamber for as long as it stays open, so
+  // reading what a Tollkeeper does does not cost you the wave.
+  const libraryBtn = document.getElementById("library");
+  const libBackEl = document.getElementById("lib-back");
+  libraryBtn.addEventListener("click", () => {
+    const open = window.__hoard && window.__hoard.openLibrary;
+    if (!open) return;
+    const wasPaused = S.paused;
+    S.paused = true;
+    pauseBtn.textContent = "Resume"; pauseBtn.classList.add("on");
+    open();
+    const mo = new MutationObserver(() => {
+      if (!libBackEl.hidden) return;
+      mo.disconnect();
+      if (!wasPaused) { S.paused = false; pauseBtn.textContent = "Pause"; pauseBtn.classList.remove("on"); }
+    });
+    mo.observe(libBackEl, { attributes: true, attributeFilter: ["hidden"] });
+  });
   function renderAll() { renderRack(); renderPips(); renderInspector(); }
 
   // ====================================================================== loop
@@ -2356,7 +2605,7 @@
   window.__hoard = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
-    nameOf, maxHpOf, shotOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
+    nameOf, maxHpOf, shotOf, drawGoblinIcon, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
@@ -2510,8 +2759,12 @@
       bits.push(shot.dmg + " dmg every " + shot.cd + "s");
       if (shot.aoe) bits.push("splash for " + shot.aoeDmg + " more in a ring");
       if (shot.slow) bits.push("slows whatever it hits");
-      if (shot.shove) bits.push("shoves whatever it hits back");
+      if (shot.shove) bits.push("shoves whatever it hits back (" + shot.shove + "px)");
       if (shot.bounty) bits.push("+" + shot.bounty + "g on a kill of its own");
+      if (shot.bounce) bits.push("on every hit, ricochets into the nearest other enemy " +
+                                  "in the lane for " + shot.bounce + " more");
+      if (shot.goldenChance) bits.push(Math.round(shot.goldenChance * 100) +
+                                        "% chance to fire a golden shot for double damage");
     } else bits.push("doesn't attack");
     if (cOf("tollkeep") > 0) bits.push("takes a cut of every kill in its lane");
     if (cOf("digger") > 0) bits.push("also mines &mdash; richer further right");
@@ -2521,24 +2774,39 @@
            bits.slice(1).map(b => b.charAt(0).toUpperCase() + b.slice(1) + ".").join(" ");
   }
 
+  // The icon is a real <canvas> painted after the HTML lands - drawGoblinIcon needs
+  // a live 2D context, which an innerHTML string cannot hand it. iconTag reserves
+  // the element; paintIcons (below) fills every one in on the next pass.
+  const ICON_SIZE = 112;
+  const iconTag = parts => '<canvas class="lib-icon" width="' + ICON_SIZE + '" height="' + ICON_SIZE +
+                            '" data-parts="' + parts.join(",") + '"></canvas>';
+
   function fusionCard(parts) {
     const u0 = V.UNITS[parts[0]];
     const hp = Math.round(parts.reduce((a, t) => a + V.UNITS[t].hp, 0) * 0.72);
     const cost = parts.reduce((a, t) => a + V.UNITS[t].cost, 0);
     return '<div class="lib-card" style="--role:' + u0.tint + '">' +
-             '<span class="lib-name">' + V.nameOf({ parts }) + '</span>' +
+             '<span class="lib-head">' + iconTag(parts) +
+               '<span class="lib-name">' + V.nameOf({ parts }) + '</span></span>' +
              '<span class="lib-meta">' + parts.map(t => V.UNITS[t].name).join(" + ") + '</span>' +
              '<span class="lib-meta">' + cost + 'g &middot; ' + hp + ' hp</span>' +
              '<span class="lib-note">' + statsNote(parts) + '</span>' +
            '</div>';
   }
 
+  function paintIcons(root) {
+    root.querySelectorAll(".lib-icon").forEach(cv => {
+      V.drawGoblinIcon(cv.getContext("2d"), cv.dataset.parts.split(","), ICON_SIZE);
+    });
+  }
+
   function renderLibrary() {
     libList.innerHTML = Object.keys(V.UNITS).map(key => {
       const u = V.UNITS[key], locked = !M.unlocked.includes(key);
       return '<div class="lib-card' + (locked ? ' locked' : '') + '" style="--role:' + u.tint + '">' +
-               '<span class="lib-name">' + u.name +
-                 (locked ? ' <i>&mdash; not yet unlocked</i>' : '') + '</span>' +
+               '<span class="lib-head">' + iconTag([key]) +
+                 '<span class="lib-name">' + u.name +
+                   (locked ? ' <i>&mdash; not yet unlocked</i>' : '') + '</span></span>' +
                '<span class="lib-meta">' + u.cost + 'g &middot; ' + u.hp + ' hp &middot; ' +
                  u.recharge + 's recharge</span>' +
                '<span class="lib-note">' + statsNote([key]) + '</span>' +
@@ -2547,12 +2815,16 @@
     }).join("");
     libFu2.innerHTML = FUSIONS_2.map(fusionCard).join("");
     libFu3.innerHTML = FUSIONS_3.map(fusionCard).join("");
+    paintIcons(libBack);
   }
   function openLibrary() { renderLibrary(); libBack.hidden = false; }
   function closeLibrary() { libBack.hidden = true; }
   document.getElementById("lib-close").addEventListener("click", closeLibrary);
   libBack.addEventListener("click", ev => { if (ev.target === libBack) closeLibrary(); });
   addEventListener("keydown", e => { if (e.key === "Escape" && !libBack.hidden) closeLibrary(); });
+  // The in-chamber Library button (game-shell script) reuses this instead of a
+  // second copy of the panel - one list, opened from two places.
+  V.openLibrary = openLibrary;
 
   // ------------------------------------------------------------------ chrome
   function bar() {
