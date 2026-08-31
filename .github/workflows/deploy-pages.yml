@@ -1,0 +1,49 @@
+name: Deploy Hoard to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+      - claude/game-project-build-pfsv64
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Publish the prototype/ folder as-is, but make hoard.html the site's
+      # main page by also placing a copy of it at the site root as
+      # index.html. Nothing under prototype/ is modified — this only
+      # affects the generated build output (_site).
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -r prototype/. _site/
+          cp prototype/hoard.html _site/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
