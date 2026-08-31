@@ -207,7 +207,7 @@
   @media (max-width: 560px) {
     .meta { padding: 10px 10px 84px; gap: 10px; }
     .m-panel { padding: 12px; gap: 9px; }
-    .crew, .worlds { grid-template-columns: 1fr; gap: 8px; }
+    .crew, .worlds, .lib-list { grid-template-columns: 1fr; gap: 8px; }
     .gob, .world { min-height: 56px; padding: 11px 13px; }
     .gob-name { font-size: 17px; }
     .gob-note { font-size: 12.5px; }
@@ -227,6 +227,29 @@
   .tile i { font-family: var(--data); font-size: 10.5px; font-style: normal;
             color: var(--ink-dim); }
   .m-panel h2 + .m-note { margin-top: -4px; }
+
+  /* ---------------------------------------------------------------- the library */
+  /* A reference panel over the game screen, not a new visual language - it borrows
+     the meta layer's .m-panel/.gob look wholesale so it reads as part of the same
+     game rather than a bolted-on help box. */
+  .lib-back { position: fixed; inset: 0; z-index: 50; padding: 16px;
+              background: rgba(11,9,16,.86); backdrop-filter: blur(2px);
+              display: flex; align-items: center; justify-content: center; }
+  .lib-back[hidden] { display: none; }
+  .lib-panel { max-width: 640px; width: 100%; max-height: 84vh; overflow-y: auto; }
+  .lib-list { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .lib-card { background: var(--stone); border: 1px solid #3b3340;
+              border-left: 3px solid var(--role, var(--gold-dim)); border-radius: 4px;
+              padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; }
+  .lib-card.locked { opacity: .5; }
+  .lib-name { font-family: var(--display); font-size: 16px; text-transform: uppercase;
+              letter-spacing: .02em; line-height: 1.1; }
+  .lib-name i { font-family: var(--body); font-size: 10px; text-transform: none;
+                font-style: normal; color: var(--ink-dim); letter-spacing: 0; }
+  .lib-meta { font-family: var(--data); font-size: 10.5px; color: var(--ink-dim);
+              letter-spacing: .04em; }
+  .lib-note { font-size: 12px; color: var(--ink-dim); line-height: 1.35; }
+  .lib-note.flavor { font-style: italic; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -275,6 +298,25 @@
 
   </div>
 
+</div>
+
+<div class="lib-back" id="lib-back" hidden>
+  <div class="m-panel lib-panel">
+    <h2>Library</h2>
+    <p class="m-note">Every goblin in the dig.</p>
+    <div class="lib-list" id="lib-list"></div>
+
+    <h2>Fusions</h2>
+    <p class="m-note">Every body two or three goblins can become. Drop one goblin
+      already on the board onto another to build one &mdash; stats below assume no
+      forge upgrades.</p>
+    <div class="world-tier">Two goblins</div>
+    <div class="lib-list" id="lib-fusions-2"></div>
+    <div class="world-tier">Three goblins</div>
+    <div class="lib-list" id="lib-fusions-3"></div>
+
+    <button class="btn" id="lib-close" type="button">Close</button>
+  </div>
 </div>
 
 <script>
@@ -525,6 +567,24 @@
                  || UNITS[base].name;
     const pre = order.slice(1).map(t => EPITHET[t] || UNITS[t].name).join(" ");
     return pre ? pre + " " + noun : noun;
+  }
+
+  // The same weapon-tier math as the live shot above, but as a pure function of a
+  // parts list with no run upgrades applied - the Library's "base recipe" stats, not
+  // whatever this run's forge picks happened to reshape it into.
+  function shotOf(parts) {
+    const cOf = t => parts.filter(x => x === t).length;
+    const cn = cOf("chucker") + (cOf("sapper") > 0 ? 1 : 0) + (cOf("hollerer") > 0 ? 1 : 0);
+    if (cn === 0) return null;
+    const weak = cOf("chucker") === 0;
+    let spec = cn === 1 ? { cd: weak ? 1.7 : 1.3, dmg: weak ? 12 : 22 }
+             : cn === 2 ? { cd: 1.25, dmg: 42 }
+                        : { cd: 1.2,  dmg: 61 };
+    if (cOf("keg") > 0) spec = { ...spec, aoe: 46 + 14 * cOf("keg"), aoeDmg: Math.round(spec.dmg * 0.55) };
+    if (cOf("hollerer") > 0) spec = { ...spec, slow: 1.1 };
+    if (cOf("sapper") > 0) spec = { ...spec, shove: Math.min(10, 4 * cOf("sapper")) };
+    if (cOf("tollkeep") > 0) spec = { ...spec, bounty: 7 * cOf("tollkeep") };
+    return spec;
   }
 
   // A Digger's take is a function of how far forward you put it. No tiles, no lottery:
@@ -2296,7 +2356,7 @@
   window.__hoard = {
     get state() { return S; },
     wave: n => { S.waveIx = n - 2; S.phase = "breath"; S.phaseT = 0.1; },
-    nameOf, maxHpOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
+    nameOf, maxHpOf, shotOf, yieldAt, WAVES, UNITS, WORLDS, ROUTE, UPGRADES, SMALLS, place: tryPlace,
     costOf,
     smallPrice: (role, id) => Math.round(SMALLS[id].base * (1 + smallOf(role, id) * 0.7)),
     smallCount: (role, id) => smallOf(role, id),
@@ -2417,6 +2477,83 @@
     return got;
   }
 
+  // A read-only reference over the warren: every goblin that exists, and what it
+  // does. Lives at the top level (outside #meta) so it survives a screen swap, and
+  // reuses ROLES' own flavour text rather than duplicating it.
+  const libBack = document.getElementById("lib-back");
+  const libList = document.getElementById("lib-list");
+  const libFu2 = document.getElementById("lib-fusions-2");
+  const libFu3 = document.getElementById("lib-fusions-3");
+
+  // Every multiset of size 2 and 3 over the seven roles - the same 112 bodies the
+  // engine's own name generator covers (119 including the three lone starters, per
+  // the README). Built once: the roster does not change while the panel is open.
+  const ROLE_KEYS = Object.keys(V.UNITS);
+  function combosOfSize(n) {
+    const out = [];
+    (function rec(start, chosen) {
+      if (chosen.length === n) { out.push(chosen.slice()); return; }
+      for (let i = start; i < ROLE_KEYS.length; i++) { chosen.push(ROLE_KEYS[i]); rec(i, chosen); chosen.pop(); }
+    })(0, []);
+    return out;
+  }
+  const FUSIONS_2 = combosOfSize(2), FUSIONS_3 = combosOfSize(3);
+
+  // What a body made of these parts actually does in a fight, in one sentence.
+  // Shared by the base goblins and every fusion below them, so a Sapper's card and
+  // a Sapper-containing fusion's card describe the same shove the same way.
+  function statsNote(parts) {
+    const cOf = t => parts.filter(x => x === t).length;
+    const shot = V.shotOf(parts);
+    const bits = [];
+    if (shot) {
+      bits.push(shot.dmg + " dmg every " + shot.cd + "s");
+      if (shot.aoe) bits.push("splash for " + shot.aoeDmg + " more in a ring");
+      if (shot.slow) bits.push("slows whatever it hits");
+      if (shot.shove) bits.push("shoves whatever it hits back");
+      if (shot.bounty) bits.push("+" + shot.bounty + "g on a kill of its own");
+    } else bits.push("doesn't attack");
+    if (cOf("tollkeep") > 0) bits.push("takes a cut of every kill in its lane");
+    if (cOf("digger") > 0) bits.push("also mines &mdash; richer further right");
+    if (cOf("keg") > 0) bits.push("detonates once, for good, when a hero reaches it");
+    if (cOf("sapper") > 0) bits.push("clears its own lane of rubble");
+    return bits[0].charAt(0).toUpperCase() + bits[0].slice(1) + ". " +
+           bits.slice(1).map(b => b.charAt(0).toUpperCase() + b.slice(1) + ".").join(" ");
+  }
+
+  function fusionCard(parts) {
+    const u0 = V.UNITS[parts[0]];
+    const hp = Math.round(parts.reduce((a, t) => a + V.UNITS[t].hp, 0) * 0.72);
+    const cost = parts.reduce((a, t) => a + V.UNITS[t].cost, 0);
+    return '<div class="lib-card" style="--role:' + u0.tint + '">' +
+             '<span class="lib-name">' + V.nameOf({ parts }) + '</span>' +
+             '<span class="lib-meta">' + parts.map(t => V.UNITS[t].name).join(" + ") + '</span>' +
+             '<span class="lib-meta">' + cost + 'g &middot; ' + hp + ' hp</span>' +
+             '<span class="lib-note">' + statsNote(parts) + '</span>' +
+           '</div>';
+  }
+
+  function renderLibrary() {
+    libList.innerHTML = Object.keys(V.UNITS).map(key => {
+      const u = V.UNITS[key], locked = !M.unlocked.includes(key);
+      return '<div class="lib-card' + (locked ? ' locked' : '') + '" style="--role:' + u.tint + '">' +
+               '<span class="lib-name">' + u.name +
+                 (locked ? ' <i>&mdash; not yet unlocked</i>' : '') + '</span>' +
+               '<span class="lib-meta">' + u.cost + 'g &middot; ' + u.hp + ' hp &middot; ' +
+                 u.recharge + 's recharge</span>' +
+               '<span class="lib-note">' + statsNote([key]) + '</span>' +
+               '<span class="lib-note flavor">' + ROLES[key].note + '</span>' +
+             '</div>';
+    }).join("");
+    libFu2.innerHTML = FUSIONS_2.map(fusionCard).join("");
+    libFu3.innerHTML = FUSIONS_3.map(fusionCard).join("");
+  }
+  function openLibrary() { renderLibrary(); libBack.hidden = false; }
+  function closeLibrary() { libBack.hidden = true; }
+  document.getElementById("lib-close").addEventListener("click", closeLibrary);
+  libBack.addEventListener("click", ev => { if (ev.target === libBack) closeLibrary(); });
+  addEventListener("keydown", e => { if (e.key === "Escape" && !libBack.hidden) closeLibrary(); });
+
   // ------------------------------------------------------------------ chrome
   function bar() {
     const b = el("div", "m-bar");
@@ -2430,6 +2567,10 @@
     if (R) stat("Depth", R.chapter + "-" + R.chamber, "gold");
     else stat("Deepest", (M.deepest || 0) + "/" + CHAPTERS);
     const sp = el("span"); sp.style.marginLeft = "auto";
+    sp.style.display = "flex"; sp.style.gap = "8px";
+    const lib = el("button", "btn", "Library");
+    lib.onclick = openLibrary;
+    sp.append(lib);
     const wipe = el("button", "btn", "Wipe save");
     // Native confirm() is suppressed inside the sandboxed frame the game is viewed in,
     // so it silently answered "no" and the button did nothing. Two taps on the button
